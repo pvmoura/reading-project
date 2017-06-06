@@ -1,0 +1,7 @@
+{
+  "corpus": "/",
+  "segmentMinTime": 0,
+  "segmentMaxTime": 100,
+  "videoDuration": 360,
+  "soundFileDirectory": "./sounds"
+}
