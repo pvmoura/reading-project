@@ -6,9 +6,7 @@ function launchWatson (callback, filename) {
   watson_stream = watson.createStream();
 
   watson_stream.on('finalData', function (data) {
-    var passAlong = {};
-    passAlong[filename] = data;
-    callback(null, passAlong);
+    callback(null, data, filename);
   });
 
   watson_stream.on('watsonError', function (err) {
@@ -35,7 +33,7 @@ module.exports.createTranscriber = function (options, callback) {
     active: false,
     restart: restart,
     startTranscription: function (test) {
-      this.watsonObj = launchWatson(callback, this.filename);
+      this.watsonObj = launchWatson(callback, options.filename);
     }
   }
 }

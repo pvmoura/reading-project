@@ -1,3 +1,5 @@
 google_credentials.json
 
 node_modules/*
+videos/*
+credentials.sh

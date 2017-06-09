@@ -6,20 +6,29 @@ var files = fs.readdirSync(config.soundFileDirectory);
 files = files.filter(function(a) { return a.split('.')[1] === 'wav'; });
 var numOfFiles = files.length;
 var processedFiles = 0;
-var allData = [];
+var allData = {};
+var rankBits = function (data, filename) {
+  var ranked = {};
+  ranked[filename] = [];
+  data.forEach(function (datum) {
+
+  });
+};
 var processData = function (data) {
   var processed = [], watsonObj;
-  data.forEach(function (datum) {
-    for (var key in datum) {
-      if (datum.hasOwnProperty(key)) {
-        watsonObj = datum[key];
-        processed.push({
-          filename: config.soundFileDirectory + '/' + key,
-          start: watsonObj.timestamps[0][1],
-          end: watsonObj.timestamps[10][2]
-        });
-      }
+  for (var dataKey in data) {
+    if (data.hasOwnProperty(dataKey)) {
+      watsonObj = data[dataKey];
+      processed.push(rankBits(data[dataKey], dataKey));
+      processed.push({
+        filename: config.soundFileDirectory + '/' + key,
+        start: watsonObj.timestamps[0][1],
+        end: watsonObj.timestamps[10][2]
+      });
     }
+  }
+  data.forEach(function (datum) {
+
   });
   return processed;
 }
@@ -40,9 +49,11 @@ var makeClip = function (data) {
 }
 var callback = function (err, data, filename) {
   var processedData = [];
-  allData.push(data);
-  processedFiles++;
-  // console.log(numOfFiles, allData, data, processedFiles);
+  
+  if (typeof allData[filename] === 'undefined')
+    allData[filename] = []
+  allData[filename].push(data);
+  console.log(processedFiles, allData);
   if (processedFiles === numOfFiles) {
     processedData = processData(allData);
     makeClip(processedData);
@@ -51,6 +62,7 @@ var callback = function (err, data, filename) {
 }
 
 files.forEach(function (filename) {
+  console.log(filename);
   var transcriber,
     options = {
       dir: config.dir,
@@ -60,6 +72,9 @@ files.forEach(function (filename) {
   if (filename.split('.')[1] === 'wav') {
     transcriber = watsonTranscriber.createTranscriber(options, callback);
     transcriber.startTranscription();
+    transcriber.watsonObj.on('watsonClose', function () {
+      processedFiles++;
+    });
     fs.createReadStream(config.soundFileDirectory + '/' + filename).pipe(transcriber.watsonObj);
   }
 
