@@ -1,5 +1,11 @@
 google_credentials.json
-
+.DS_Store
 node_modules/*
 videos/*
 credentials.sh
+sounds/*
+temp_videos/*
+final_videos/*
+concat_list.txt
+config.json
+most_common_words.txt

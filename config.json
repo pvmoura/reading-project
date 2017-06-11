@@ -1,7 +1,8 @@
 {
   "corpus": "/",
-  "segmentMinTime": 0,
+  "segmentMinTime": 10,
   "segmentMaxTime": 100,
-  "videoDuration": 360,
-  "soundFileDirectory": "./sounds"
+  "videoDuration": 60,
+  "soundFileDirectory": "./transcripts",
+  "videoFileDirectory": "/Users/pedrovmoura/Dropbox/Exquisite_Corpse/short_samples"
 }
