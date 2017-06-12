@@ -1,6 +1,6 @@
 {
   "corpus": "/",
-  "segmentMinTime": 10,
+  "segmentMinTime": 7,
   "segmentMaxTime": 100,
   "videoDuration": 60,
   "soundFileDirectory": "./transcripts",

@@ -54,10 +54,10 @@ var makeClipInteresting = function (data) {
   var fragments = data.map(function (datum, i) {
     var time = datum[2];
     var output = "./temp_videos/" + 'output' + i + '.mov';
-    var command = '-i ' + config.videoFileDirectory + "/" + datum[3] + ".mov" + ' -ss 00:00:' + datum[4] + ' -t 00:00:' + time + ' ' + output;
+    var command = '-i ' + config.videoFileDirectory + "/" + datum[3] + ".mov" + ' -ss ' + convertTimeToTimeStamp(datum[4]) + ' -t ' + convertTimeToTimeStamp(time) + ' ' + output;
     console.log(command, time, datum, "DATUM");
     var result = child.spawnSync('ffmpeg', command.split(' '));
-    console.log(result);
+    // console.log(result);
     fs.writeSync(fd, "file '" + output + "'\n");
     return output;
   });
@@ -99,6 +99,59 @@ var firstAndLastWords = function (fileRep) {
     }
   });
 };
+var segmentByTime = function (fileRep) {
+  function consolidateSegments(temp, segment) {
+    if (typeof temp.transcript === 'undefined')
+      temp.transcript = "";
+      
+    temp.transcript += segment.transcript;
+
+    if (typeof temp.startTimeStamp === 'undefined')
+      temp.startTimeStamp = segment.startTimeStamp;
+    temp.endTimeStamp = segment.endTimeStamp;
+    temp.filename = segment.filename;
+    if (typeof temp.totalTime === 'undefined')
+      temp.totalTime = 0;
+    temp.totalTime += segment.totalTime;
+    if (typeof temp.word_confidence === 'undefined')
+      temp.word_confidence = segment.word_confidence;
+    else
+      temp.word_confidence = temp.word_confidence.concat(segment.word_confidence);
+    if (typeof temp.timestamps === 'undefined')
+      temp.timestamps = segment.timestamps;
+    else
+      temp.timestamps = temp.timestamps.concat(segment.timestamps);
+    return temp
+  }
+  var newRep = [], temp = {}, countedUpTime = 0;
+  fileRep.forEach(function (segment) {
+    if (countedUpTime > 0 && countedUpTime < config.segmentMinTime) {
+      temp = consolidateSegments(temp, segment);
+      countedUpTime += segment.totalTime;
+    } else if (countedUpTime >= config.segmentMinTime) {
+      countedUpTime = 0;
+      newRep.push(temp);
+      temp = {};
+    } else if (segment.totalTime < config.segmentMinTime) {
+      temp = consolidateSegments(temp, segment);
+
+      countedUpTime += segment.totalTime;
+    } else
+      newRep.push(segment);
+      // console.log(countedUpTime, newRep);
+  });
+  
+  return newRep;
+};
+var convertTimeToTimeStamp = function (time) {
+  var seconds = time % 60;
+  var minutes = parseInt(time / 60, 10);
+  var hours = parseInt(time / 360, 10);
+  var timeList = [hours.toString(), minutes.toString(), seconds.toString()];
+  timeList = timeList.map(function (t) { return t.length === 1 ? "0" + t : t; });
+  return timeList.join(":");
+
+}
 var wordVariety = function (fileRep) {
   fileRep.map(function (segment, i) {
     var count = {}, numberOfWords = 0, numberOfCommon = 0;
@@ -133,6 +186,7 @@ var rankInterestingness = function (fileRep, filename) {
       return 0;
   });
 };
+
 var callback = function (err, data, filename) {
   var fd = fs.openSync('./transcripts/' + filename.split('.')[0] + '.txt', 'a');
   fs.writeSync(fd, JSON.stringify(data));
@@ -159,6 +213,7 @@ files.forEach(function (filename) {
   if (filename.split('.')[1] === 'json') {
     soundFile = JSON.parse(fs.readFileSync(config.soundFileDirectory + "/" + filename, 'utf-8'));
     soundFile = countUpTimestamps(soundFile, filename.split('.')[0]);
+    soundFile = segmentByTime(soundFile);
     soundFile = wordVariety(soundFile);
     rankedSoundFile = rankInterestingness(soundFile, filename.split('.')[0]);
     rankedSoundFile.forEach(function (s) {
@@ -187,39 +242,16 @@ rankedSoundFiles = rankedSoundFiles.sort(function (a, b) {
   else
     return 0;
 });
+
 var sequence = [], videoTime = 0, clips = [], totalTime = 0, index, fn;
-var findClip = function (clip) {
-  var order = clip.originalOrder, name = clip.filename, index = 0;
-  for (index; index < rankedSoundFiles.length; index++) {
-    // if (order == rankdedSoundFiles[index])
-  }
-
-  rankedSoundFiles.forEach(function (f, i) {
-    // f[]
-  });
-};
 while (config.videoDuration > videoTime) {
-  clip = rankedSoundFiles.pop();
-  used.push(clip);
-  if (false && clip[2] < config.segmentMinTime) {
-    totalTime += clip[2];
-    index = clip[1];
-    fn = clip[3];
-    clips.push(clip);
-    while (totalTime < config.segmentMinTime) {
-      index++;
-      if (index < soundFiles) {
-        nextClip = soundFiles[fn][index];  
-      } else {
-        break;
-      }
-      totalTime += nextClip.totalTime;
 
-    }
-  } else {
-    sequence.push(clip);  
-  }
-  
+  do {
+    clip = rankedSoundFiles.pop();
+    used.push(clip);
+  } while (clip[2] > (config.segmentMinTime * 1.5));
+
+  sequence.push(clip);
   videoTime += clip[2];
 }
 makeClipInteresting(sequence);
