@@ -8,6 +8,18 @@ var files = fs.readdirSync(config.soundFileDirectory);
 var numOfFiles = files.length;
 var processedFiles = 0;
 var allData = {};
+Array.prototype.popByIndex = function (index) {
+  var val = this[index];
+  if (typeof(val) === 'undefined' || typeof(index) !== 'number') return false;
+  
+  for (var i=index+1, len=this.length; i < len; i++) {
+    this[index] = this[i];
+    index++;
+  }
+  
+  this.pop();
+  return val;
+};
 var rankBits = function (data, filename) {
   var ranked = {};
   ranked[filename] = [];
@@ -175,7 +187,7 @@ var wordVariety = function (fileRep) {
 };
 var rankInterestingness = function (fileRep, filename) {
   var ranked = fileRep.map(function (segment, i) {
-    return [segment.commonRatio, segment.originalOrder, segment.totalTime, filename, segment.startTimeStamp, segment.endTimeStamp]; 
+    return [segment.commonRatio, segment.originalOrder, segment.totalTime, filename, segment.startTimeStamp, segment.endTimeStamp, segment.words]; 
   });
   return ranked.sort(function (a, b) {
     if (a[0] > b[0])
@@ -186,7 +198,22 @@ var rankInterestingness = function (fileRep, filename) {
       return 0;
   });
 };
-
+var findSimilarSegment = function (segments, segment) {
+  var words = segment[6];
+  words = words.filter(function (w) {
+    return mostCommonWords.indexOf(w) === -1;
+  });
+  words = words.slice(parseInt(words.length / 2, 10));
+  var similar = segments.filter(function (s) {
+    var sWords = s[6], sim = false;
+    words.forEach(function (w) {
+      if (sWords.indexOf(w) !== -1)
+        sim = true;
+    });
+    return sim;
+  })
+  return similar.length ? similar.popByIndex(getRandomInt(0, similar.length - 1)) : null;
+}
 var callback = function (err, data, filename) {
   var fd = fs.openSync('./transcripts/' + filename.split('.')[0] + '.txt', 'a');
   fs.writeSync(fd, JSON.stringify(data));
@@ -234,6 +261,7 @@ files.forEach(function (filename) {
 //     else
 //       return 0;
 //   });
+
 rankedSoundFiles = rankedSoundFiles.sort(function (a, b) {
   if (a[0] > b[0])
     return a[2] > b[2] ? 1 : -1;
@@ -242,16 +270,26 @@ rankedSoundFiles = rankedSoundFiles.sort(function (a, b) {
   else
     return 0;
 });
-
+var getRandomInt = function (min, max) {
+  min = Math.ceil(min);
+  max = Math.floor(max);
+  return Math.floor(Math.random() * (max - min)) + min;
+}
 var sequence = [], videoTime = 0, clips = [], totalTime = 0, index, fn;
+var midRange = rankedSoundFiles.filter(function (c) {
+  return c[2] <= config.segmentMinTime * 3;
+});
+clip = midRange.popByIndex(getRandomInt(0, midRange.length - 1));
+console.log(midRange.length, clip);
 while (config.videoDuration > videoTime) {
-
-  do {
-    clip = rankedSoundFiles.pop();
-    used.push(clip);
-  } while (clip[2] > (config.segmentMinTime * 1.5));
-
+  if (!clip) {
+    console.log("NO SIMILAR");
+    midRange.popByIndex(getRandomInt(0, midRange.length - 1));
+  } else {
+    midRange.popByIndex(midRange.indexOf(clip));
+  }
   sequence.push(clip);
   videoTime += clip[2];
+  clip = findSimilarSegment(midRange, clip);
 }
 makeClipInteresting(sequence);
