@@ -34,39 +34,22 @@ silences.stdout.on('data', function (data) {
   allData[data.filename]['silences'] = data.silences;
   processed++;
   if (processed === numToProcess) {
-    silences.kill();
+    // silences.kill();
     makeClipWithSilences();
   }
 });
 silences.stderr.on('data', function (err) {
   console.log(err);
 });
-var findClipsWithWord = function (word, usedRanges) {
-  var clip, clips = [], ranges, clipWord;
+var findClipsWithWord = function (word) {
+  var clip, clips = [], clipWord;
   for (var key in allData) {
     if (allData.hasOwnProperty(key)) {
       clip = allData[key];
-      ranges = usedRanges[key];
+
       if (clip.combinedWatson.transcript.indexOf(word + " ") !== -1) {
-        clipWord = clip.combinedWatson.timestamps.filter(function (t) {
-          return t[0] === word;
-        });
-        console.log(ranges, "RANGES");
-        if (typeof ranges !== 'undefined' && ranges.length > 0) {
-          ranges = ranges.filter(function (r) {
-            var notInThere = true;
-            clipWord.forEach(function (w) {
-              if (w[2] >= r[0] && w[2] <= r[1])
-                inThere = false;
-            });
-            return notInThere;
-          });
-          console.log(ranges, clipWord);
-          if (ranges.length != 0)
-            clips.push(key);
-        } else {
-          clips.push(key);
-        }
+        console.log(clip.combinedWatson.transcript);
+        clips.push(key);
       }
         
     }
@@ -76,22 +59,40 @@ var findClipsWithWord = function (word, usedRanges) {
 }
 
 var getWordTimestamps = function (filename, word) {
-  var clip = allData[filename];
-  if (!clip) return null;
-  var timestamps = clip.combinedWatson.timestamps;
-  var timestamp = timestamps.filter(function (t) {
+  var clip = allData[filename], timestamps;
+  if (typeof clip === 'undefined') return null;
+  timestamps = clip.combinedWatson.timestamps;
+  timestamps = timestamps.filter(function (t) {
+    // console.log(t[0], word);
     return t[0] === word; 
   });
-  return timestamp;
-}
-var getSilenceRange = function (filename, timestamp) {
+  return timestamps;
+};
+var retrieveClosestSilenceToWord = function (silences, wordTime) {
+  var indexOfClosestSilence;
+  silences.forEach(function (s, i) {
+    
+  })
+};
+var getAllSilenceRanges = function (filename, timestamp) {
   var start = timestamp[1], clip = allData[filename], silences = clip.silences;
-  var lastBeforeWord;
+  var lastBeforeWord, totalTime = 0, startTime;
   silences.forEach(function (s, i) {
     if (s[1] < start)
       lastBeforeWord = i;
   });
-  return silences.slice(lastBeforeWord);
+  silences = silences.slice(lastBeforeWord);
+  if (silences.length == 0) return silences;
+  startTime = silences[0][1];
+  return silences.filter(function (s) {
+    var keep = false;
+    if (totalTime <= config.segmentMinTime) {
+      keep = true;
+    }
+    totalTime += s[1] - startTime;
+    startTime = s[1];
+    return keep;
+  });
 };
 var getWordsFromRange = function (filename, range) {
   var clip = allData[filename], timestamps = clip.combinedWatson.timestamps;
@@ -128,9 +129,10 @@ var getWordsFromClip = function (words) {
   });
 
 };
-var usedRanges = {};
+
+var usedRanges = {}, possibleRanges = {};
 var makeClipWithSilences = function () {
-  var words = ["scare"], clips, clip, word, time = 0, counter = 0;
+  var words = ["birth"], clips, clip, word, time = 0, counter = 0;
   while ( time < config.videoDuration ) {
     // console.log("WORDSSSSSS", words);
     for (var i = 0, length = words.length; i < length; i++) {
@@ -156,14 +158,54 @@ var makeClipWithSilences = function () {
     } else {
       words = JSON.parse(child.execFileSync('./wordnet_analysis.py', [words[getRandomInt(0, words.length)]]));
     }
+    break;
   }
-  makeVideo();
+  // makeVideo();
 }
+var getFreeRanges = function (usedRanges, filename, word) {
+  var wordTimestamps = getWordTimestamps(filename, word),
+      range = usedRanges[filename];
+  console.log(wordTimestamps);
+  if (wordTimestamps === null) return null;
+  if (typeof range !== 'undefined') {
+    for (var i = 0, length = range.length; i < length; i++) {
+
+    }
+  }
+
+};
+var addPossibleRanges = function (filename, timestamps, word) {
+  if (typeof possibleRanges[word] === 'undefined')
+    possibleRanges[word] = {};
+  if (typeof possibleRanges[word][filename] === 'undefined')
+    possibleRanges[word][filename] = [];
+  possibleRanges[word][filename].push(timestamps);
+  return possibleRanges;
+};
 var getWords = function (clips, startingWord) {
-  var clip;
+  var clip, timestamps, rand;
+  clips.forEach(function (c) {
+    timestamps = getWordTimestamps(c, startingWord);
+    timestamps.forEach(function (t) {
+      var s = getAllSilenceRanges(c, t);
+      console.log(s, t);
+      addPossibleRanges(c, getAllSilenceRanges(c, t), startingWord);
+    });
+    
+  });
+  
   do {
-    clip = clips.popByIndex(getRandomInt(0, clips.length));
+    rand = getRandomInt(0, clips.length - 1);
+    
+    clip = clips.popByIndex(rand);
+    timestamps = getWordTimestamps(clip, startingWord);
+    console.log(timestamps, clip, clips, rand);
+    timestamps.forEach(function (t) {
+      console.log(getAllSilenceRanges(clip, t));
+    });
+    getFreeRanges(usedRanges, clip, startingWord);
   } while (usedClips.indexOf(clip) !== -1 && clips.length != 0);
+  return null;
   if (!clip) return null;
   usedClips.push(clip);
   var timestamp = getWordTimestamps(clip, startingWord);
@@ -171,7 +213,7 @@ var getWords = function (clips, startingWord) {
     return null;
   }
   // console.log("TIMESTAMP", timestamp);
-  var silencesRange = getSilenceRange(clip, timestamp[0]);
+  var silencesRange = getAllSilenceRanges(clip, timestamp[0]);
   if (silencesRange.length >= 2) {
     var counter = 0, time = 0;
     console.log(silencesRange, "SILENCES RANGE");
@@ -418,7 +460,6 @@ files.forEach(function (filename) {
   var soundFile, rankedSoundFile = [], identifier = filename.split('.')[0];
   if (filename.split('.')[1] === 'json') {
     numToProcess++;
-    console.log(processed, numToProcess);
     silences.stdin.write(config.waveFileDirectory + "Leveled-_" + identifier + '.wav\n');
     soundFile = JSON.parse(fs.readFileSync(config.soundFileDirectory + "/" + filename, 'utf-8'));
 
