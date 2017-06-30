@@ -14,7 +14,7 @@ var allData = {};
 var usedClips = [];
 Array.prototype.popByIndex = function (index) {
   var val = this[index];
-  if (typeof(val) === 'undefined' || typeof(index) !== 'number') return false;
+  if (typeof(val) === 'undefined' || typeof(index) !== 'number') return null;
   
   for (var i=index+1, len=this.length; i < len; i++) {
     this[index] = this[i];
@@ -39,16 +39,18 @@ silences.stdout.on('data', function (data) {
   }
 });
 silences.stderr.on('data', function (err) {
-  console.log(err);
+  //console.log(err);
 });
 var findClipsWithWord = function (word) {
-  var clip, clips = [], clipWord;
+  var clip, clips = [], clipWord, transcript, temp;
   for (var key in allData) {
     if (allData.hasOwnProperty(key)) {
       clip = allData[key];
-
+      transcript = clip.combinedWatson.transcript;
+      temp = transcript.split(' ')
+      transcript = temp.slice(temp.length / 2).join(' ');
       if (clip.combinedWatson.transcript.indexOf(word + " ") !== -1) {
-        console.log(clip.combinedWatson.transcript);
+        //console.log(clip.combinedWatson.transcript);
         clips.push(key);
       }
         
@@ -63,7 +65,7 @@ var getWordTimestamps = function (filename, word) {
   if (typeof clip === 'undefined') return null;
   timestamps = clip.combinedWatson.timestamps;
   timestamps = timestamps.filter(function (t) {
-    // console.log(t[0], word);
+    // //console.log(t[0], word);
     return t[0] === word; 
   });
   return timestamps;
@@ -97,13 +99,14 @@ var getAllSilenceRanges = function (filename, timestamp) {
 var getWordsFromRange = function (filename, range) {
   var clip = allData[filename], timestamps = clip.combinedWatson.timestamps;
   var start, end;
-  // console.log("TIMESTAMPS", timestamps, range);
+  // //console.log("TIMESTAMPS", timestamps, range);
   timestamps.forEach(function (t, i) {
     if (t[1] < range[1])
       end = i;
     if (t[1] < range[0])
       start = i;
   });
+  //console.log(filename, range, timestamps, start, end, "HELLLLLLLO");
   return timestamps.slice(start, end + 1);
 }
 var processClip = function (filename, range, num) {
@@ -111,9 +114,9 @@ var processClip = function (filename, range, num) {
   var output = "./temp_videos/" + 'output' + num + '.mov';
   var time = range[1] - range[0];
   var command = '-i ' + config.videoFileDirectory + "/" + filename + ".mov" + ' -strict -2 -ss ' + convertTimeToTimeStamp(range[0]) + ' -t ' + convertTimeToTimeStamp(time) + ' ' + output;
-  console.log(command);
+  //console.log(command);
   var result = child.spawnSync('ffmpeg', command.split(' '));
-  console.log("Done with ", filename);
+  //console.log("Done with ", filename);
   fs.writeSync(fd, "file '" + output + "'\n");
   fs.closeSync(fd);
 };
@@ -124,20 +127,47 @@ var getWordsFromClip = function (words) {
   words = words.map(function (w) {
     return w[0];
   });
-  return words.filter(function (w) {
+  words = words.filter(function (w) {
     return mostCommonWords.indexOf(w) === -1 && w.indexOf("\'") === -1 && w != '%HESITATION';
   });
-
+  return words.slice(words.length / 2);
 };
 
-var usedRanges = {}, possibleRanges = {};
+var usedRanges = [], possibleRanges = {};
+var numberInRange = function (number, rangeStart, rangeEnd) {
+  return number <= rangeEnd && number >= rangeStart;
+}
+var isUsedClip = function (resultObj) {
+  console.log(resultObj, "IN USED CLIP");
+  var filename = resultObj[0], rangeLow = resultObj[1][0], rangeHigh = resultObj[1][1], used = false;
+  usedRanges.forEach(function (r) {
+    
+    if (r[0] === filename) {
+      used = true;
+      if (numberInRange(rangeLow, r[1][0], r[1][1]) ||
+          numberInRange(rangeHigh, r[1][0], r[1][1])) {
+        console.log(r[1][0], r[1][1], r, resultObj);
+        used = true;
+      }
+        
+    }
+  });
+  return used;
+};
+
+var getNewPossible = function (word) {
+  var ranges = possibleRanges[word];
+  if (typeof ranges === 'undefined') return null;
+  console.log(ranges, "IN NEW POSSIBLE")
+  return ranges.popByIndex(getRandomInt(0, ranges.length - 1));
+}
 var makeClipWithSilences = function () {
-  var words = ["birth"], clips, clip, word, time = 0, counter = 0;
+  var words = ["beauty"], clips, clip, word, time = 0, counter = 0;
   while ( time < config.videoDuration ) {
     // console.log("WORDSSSSSS", words);
     for (var i = 0, length = words.length; i < length; i++) {
       clips = findClipsWithWord(words[i], usedRanges);
-      // console.log("CLIPS CLIPS CLIPS", clips);
+      console.log("CLIPS CLIPS CLIPS", clips);
       if (clips.length > 0) {
         break;
       }
@@ -145,27 +175,38 @@ var makeClipWithSilences = function () {
     if (clips && clips.length > 0) {
       word = words.popByIndex(i);
       var result = getWords(clips, word);
-      if (result) {
-        // console.log(result);
-        processClip(result[0], result[2], counter);
-        if (typeof usedRanges[result[0]] === 'undefined') usedRanges[result[0]] = [];
-        usedRanges[result[0]].push(result[2]);
-        counter++;
-        time += result[2][1] - result[2][0];
-        words = getWordsFromClip(result[1]);
-        console.log(words, word, time, "TIME AND WORD AND WORDS");
+      while (result !== null && isUsedClip(result)) {
+        result = getNewPossible(word);
       }
+      if (result) {
+
+        clip = result[0];
+        console.log(result);
+        processClip(clip, result[1], counter);
+        addUsedRanges(result);
+        counter++;
+        time += result[1][1] - result[1][0];
+        console.log(time, "TIMEMEMEMME");
+        words = getWordsFromRange(result[0], result[1]);
+        words = getWordsFromClip(words);
+        console.log(words, word, time, "TIME AND WORD AND WORDS");
+      } else {
+        words = JSON.parse(child.execFileSync('./wordnet_analysis.py', [words[getRandomInt(0, words.length)]]));  
+      }
+      
     } else {
       words = JSON.parse(child.execFileSync('./wordnet_analysis.py', [words[getRandomInt(0, words.length)]]));
+      if (words.length == 0) {
+        words = ["and"];
+      }
     }
-    break;
   }
-  // makeVideo();
+  makeVideo();
 }
 var getFreeRanges = function (usedRanges, filename, word) {
   var wordTimestamps = getWordTimestamps(filename, word),
       range = usedRanges[filename];
-  console.log(wordTimestamps);
+  //console.log(wordTimestamps);
   if (wordTimestamps === null) return null;
   if (typeof range !== 'undefined') {
     for (var i = 0, length = range.length; i < length; i++) {
@@ -176,63 +217,82 @@ var getFreeRanges = function (usedRanges, filename, word) {
 };
 var addPossibleRanges = function (filename, timestamps, word) {
   if (typeof possibleRanges[word] === 'undefined')
-    possibleRanges[word] = {};
-  if (typeof possibleRanges[word][filename] === 'undefined')
-    possibleRanges[word][filename] = [];
-  possibleRanges[word][filename].push(timestamps);
+    possibleRanges[word] = [];
+  possibleRanges[word].push([filename, timestamps]);
   return possibleRanges;
 };
+
+var pickAPossibleRange = function (possibleRanges, word) {
+  var rand, range;
+  if (typeof possibleRanges[word] !== 'undefined') {
+    rand = getRandomInt(0, possibleRanges[word].length - 1);
+    range = possibleRanges[word].popByIndex(rand);
+    return range;
+  }
+  return null;
+};
+
+var addUsedRanges = function (range) {
+  usedRanges.push(range);
+}
 var getWords = function (clips, startingWord) {
-  var clip, timestamps, rand;
+  var clip, timestamps, rand, words;
   clips.forEach(function (c) {
     timestamps = getWordTimestamps(c, startingWord);
     timestamps.forEach(function (t) {
       var s = getAllSilenceRanges(c, t);
-      console.log(s, t);
-      addPossibleRanges(c, getAllSilenceRanges(c, t), startingWord);
+      s = [ s[0][0], s[s.length - 1][1] ];
+      //console.log(s, t);
+      addPossibleRanges(c, s, startingWord);
     });
     
   });
+  range = pickAPossibleRange(possibleRanges, startingWord);
+  if (range === null) return range;
+  //console.log(range, "EREARALERJKEALKRJ", usedRanges, possibleRanges);
   
-  do {
-    rand = getRandomInt(0, clips.length - 1);
+  
+  return range;
+
+  // do {
+  //   rand = getRandomInt(0, clips.length - 1);
     
-    clip = clips.popByIndex(rand);
-    timestamps = getWordTimestamps(clip, startingWord);
-    console.log(timestamps, clip, clips, rand);
-    timestamps.forEach(function (t) {
-      console.log(getAllSilenceRanges(clip, t));
-    });
-    getFreeRanges(usedRanges, clip, startingWord);
-  } while (usedClips.indexOf(clip) !== -1 && clips.length != 0);
-  return null;
-  if (!clip) return null;
-  usedClips.push(clip);
-  var timestamp = getWordTimestamps(clip, startingWord);
-  if (!timestamp || timestamp.length == 0) {
-    return null;
-  }
-  // console.log("TIMESTAMP", timestamp);
-  var silencesRange = getAllSilenceRanges(clip, timestamp[0]);
-  if (silencesRange.length >= 2) {
-    var counter = 0, time = 0;
-    console.log(silencesRange, "SILENCES RANGE");
-    do {
-      time = silencesRange[counter][0] - silencesRange[0][1];
-      counter++;
-    } while (time < config.segmentMinTime && counter < silencesRange.length);
-    if (counter >= silencesRange.length)
-      return null;
-    var timeRange = [silencesRange[0][0], silencesRange[counter][1]];
+  //   clip = clips.popByIndex(rand);
+  //   timestamps = getWordTimestamps(clip, startingWord);
+  //   //console.log(timestamps, clip, clips, rand);
+  //   timestamps.forEach(function (t) {
+  //     //console.log(getAllSilenceRanges(clip, t));
+  //   });
+  //   getFreeRanges(usedRanges, clip, startingWord);
+  // } while (usedClips.indexOf(clip) !== -1 && clips.length != 0);
+  // return null;
+  // if (!clip) return null;
+  // usedClips.push(clip);
+  // var timestamp = getWordTimestamps(clip, startingWord);
+  // if (!timestamp || timestamp.length == 0) {
+  //   return null;
+  // }
+  // // //console.log("TIMESTAMP", timestamp);
+  // var silencesRange = getAllSilenceRanges(clip, timestamp[0]);
+  // if (silencesRange.length >= 2) {
+  //   var counter = 0, time = 0;
+  //   //console.log(silencesRange, "SILENCES RANGE");
+  //   do {
+  //     time = silencesRange[counter][0] - silencesRange[0][1];
+  //     counter++;
+  //   } while (time < config.segmentMinTime && counter < silencesRange.length);
+  //   if (counter >= silencesRange.length)
+  //     return null;
+  //   var timeRange = [silencesRange[0][0], silencesRange[counter][1]];
     
     
-  } else if (silencesRange.length == 1) {
-    timeRange = [silencesRange[0][0], silencesRange[0][1]];
-  } else {
-    return null;
-  }
-  var words = getWordsFromRange(clip, timeRange);
-  return [clip, words, timeRange];
+  // } else if (silencesRange.length == 1) {
+  //   timeRange = [silencesRange[0][0], silencesRange[0][1]];
+  // } else {
+  //   return null;
+  // }
+  // var words = getWordsFromRange(clip, timeRange);
+  // return [clip, words, timeRange];
 }
 var rankBits = function (data, filename) {
   var ranked = {};
@@ -266,7 +326,7 @@ var makeClip = function (data) {
     var time = datum.end - datum.start;
     var output = "./temp_videos" + 'output' + i + '.mov';
     var command = '-i ' + config.videoFileDirectory + "/" + datum.filename + ".mov" + ' -ss 00:00:' + datum.start + ' -t 00:00:' + time + ' ' + output;
-    console.log(command, time, datum, "DATUM");
+    //console.log(command, time, datum, "DATUM");
     child.spawnSync('ffmpeg', command.split(' '));
     fs.writeSync(fd, "file './" + output + "'\n");
     return output;
@@ -281,9 +341,9 @@ var makeClipInteresting = function (data) {
     var time = datum[2];
     var output = "./temp_videos/" + 'output' + i + '.mov';
     var command = '-i ' + config.videoFileDirectory + "/" + datum[3] + ".mov" + ' -ss ' + convertTimeToTimeStamp(datum[4]) + ' -t ' + convertTimeToTimeStamp(time) + ' ' + output;
-    console.log(command, time, datum, "DATUM");
+    //console.log(command, time, datum, "DATUM");
     var result = child.spawnSync('ffmpeg', command.split(' '));
-    // console.log(result);
+    // //console.log(result);
     fs.writeSync(fd, "file '" + output + "'\n");
     return output;
   });
@@ -296,7 +356,7 @@ var makeClipInteresting = function (data) {
 //   if (typeof allData[filename] === 'undefined')
 //     allData[filename] = []
 //   allData[filename].push(data);
-//   console.log(processedFiles, allData);
+//   //console.log(processedFiles, allData);
 //   if (processedFiles === numOfFiles) {
 //     processedData = processData(allData);
 //     makeClip(processedData);
@@ -364,7 +424,7 @@ var segmentByTime = function (fileRep) {
       countedUpTime += segment.totalTime;
     } else
       newRep.push(segment);
-      // console.log(countedUpTime, newRep);
+      // //console.log(countedUpTime, newRep);
   });
   
   return newRep;
@@ -517,10 +577,10 @@ files.forEach(function (filename) {
 //   return c[2] <= config.segmentMinTime * 3;
 // });
 // clip = midRange.popByIndex(getRandomInt(0, midRange.length - 1));
-// console.log(midRange.length, clip);
+// //console.log(midRange.length, clip);
 // while (config.videoDuration > videoTime) {
 //   if (!clip) {
-//     console.log("NO SIMILAR");
+//     //console.log("NO SIMILAR");
 //     midRange.popByIndex(getRandomInt(0, midRange.length - 1));
 //   } else {
 //     midRange.popByIndex(midRange.indexOf(clip));
