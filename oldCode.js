@@ -1,3 +1,14 @@
+var fs = require('fs');
+var config = JSON.parse(fs.readFileSync('config.json', 'utf8'));
+var files = fs.readdirSync(config.soundFileDirectory);
+var soundFiles = fs.readdirSync(config.waveFileDirectory);
+var watsonTranscriber = require('./transcriber.js');
+var numOfFiles = 0, processedFiles = 0;
+
+files = files.filter( function (f) { return f.split(".")[1] === 'json' } );
+files = files.map( function (f) { return f.split(".")[0] } );
+
+
 var rankBits = function (data, filename) {
   var ranked = {};
   ranked[filename] = [];
@@ -205,47 +216,65 @@ var combineTranscript = function (fileRep) {
     return prev;
   }, {transcript: '', timestamps: []});
 };
-var soundFiles = [], rankedSoundFiles = [], videoDuration = 0, used = [];
-files.forEach(function (filename) {
-  // var transcriber,
-  //   options = {
-  //     dir: config.dir,
-  //     restart: true,
-  //     filename: filename
-  //   };
-  // if (filename.split('.')[1] === 'wav') {
-  //   transcriber = watsonTranscriber.createTranscriber(options, callback);
-  //   transcriber.startTranscription();
-  //   transcriber.watsonObj.on('watsonClose', function () {
-  //     processedFiles++;
-  //   });
-  //   fs.createReadStream(config.soundFileDirectory + '/' + filename).pipe(transcriber.watsonObj);
-  // }
-  var soundFile, rankedSoundFile = [], identifier = filename.split('.')[0];
-  if (filename.split('.')[1] === 'json') {
-    numToProcess++;
-    silences.stdin.write(config.waveFileDirectory + "Leveled-_" + identifier + '.wav\n');
-    soundFile = JSON.parse(fs.readFileSync(config.soundFileDirectory + "/" + filename, 'utf-8'));
-
-    if (typeof allData[identifier] === 'undefined')
-      allData[identifier] = {};
-    allData[identifier]['rawWatsonData'] = soundFile;
-    allData[identifier]['combinedWatson'] = combineTranscript(soundFile);
-    
-    // soundFile = JSON.parse(fs.readFileSync(config.soundFileDirectory + "/" + filename, 'utf-8'));
-    // soundFile = countUpTimestamps(soundFile, filename.split('.')[0]);
-    // soundFile = segmentByTime(soundFile);
-    // soundFile = wordVariety(soundFile);
-    // rankedSoundFile = rankInterestingness(soundFile, filename.split('.')[0]);
-    // rankedSoundFile.forEach(function (s) {
-    //   rankedSoundFiles.push(s);
-    // });
-    // soundFile.forEach(function (s) {
-    //   soundFiles.push(s);
-    // });
+soundFiles.forEach(function (filename) {
+  var fn = filename.split(".");
+  console.log(fn);
+  if (fn[1] === 'wav' && files.indexOf(fn[0]) === -1) {
+    numOfFiles++;
+    var transcriber,
+    options = {
+      dir: config.dir,
+      restart: true,
+      filename: filename
+    };
+    transcriber = watsonTranscriber.createTranscriber(options, callback);
+    transcriber.startTranscription();
+    transcriber.watsonObj.on('watsonClose', function () {
+      processedFiles++;
+    });
+    fs.createReadStream(config.waveFileDirectory + filename).pipe(transcriber.watsonObj);
   }
-
 });
+// files.forEach(function (filename) {
+//   // var transcriber,
+//   //   options = {
+//   //     dir: config.dir,
+//   //     restart: true,
+//   //     filename: filename
+//   //   };
+//   // if (filename.split('.')[1] === 'wav') {
+//   //   transcriber = watsonTranscriber.createTranscriber(options, callback);
+//   //   transcriber.startTranscription();
+//   //   transcriber.watsonObj.on('watsonClose', function () {
+//   //     processedFiles++;
+//   //   });
+//   //   fs.createReadStream(config.soundFileDirectory + '/' + filename).pipe(transcriber.watsonObj);
+//   // }
+//   var soundFile, rankedSoundFile = [], identifier = filename.split('.')[0];
+//   if (filename.split('.')[1] === 'json') {
+//     numToProcess++;
+//     silences.stdin.write(config.waveFileDirectory + "Leveled-_" + identifier + '.wav\n');
+//     soundFile = JSON.parse(fs.readFileSync(config.soundFileDirectory + "/" + filename, 'utf-8'));
+
+//     if (typeof allData[identifier] === 'undefined')
+//       allData[identifier] = {};
+//     allData[identifier]['rawWatsonData'] = soundFile;
+//     allData[identifier]['combinedWatson'] = combineTranscript(soundFile);
+    
+//     // soundFile = JSON.parse(fs.readFileSync(config.soundFileDirectory + "/" + filename, 'utf-8'));
+//     // soundFile = countUpTimestamps(soundFile, filename.split('.')[0]);
+//     // soundFile = segmentByTime(soundFile);
+//     // soundFile = wordVariety(soundFile);
+//     // rankedSoundFile = rankInterestingness(soundFile, filename.split('.')[0]);
+//     // rankedSoundFile.forEach(function (s) {
+//     //   rankedSoundFiles.push(s);
+//     // });
+//     // soundFile.forEach(function (s) {
+//     //   soundFiles.push(s);
+//     // });
+//   }
+
+// });
 
 // Get silences into a dictionary with filename keys
 // search words for a starting keyword

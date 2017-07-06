@@ -1,11 +1,14 @@
 #! /usr/bin/python 
 
 import audioop, wave, os, sys, json
-#DIR = '/home/pedro/Dropbox/Exquisite_Corpse/short_samples/'
+#DIR = '/home/pedro/Dropbox/Exquisite_Corpse/short_samples/20160522_109_jody_azzouni_1.wav'
 #DIR = '/home/pedro/Dropbox/Exquisite_Corpse/Sample audio 060217/'
+DIR = "/Users/readingspeaks/Dropbox/Exquisite_Corpse/short_samples/20160521_096_daniel_browne.wav"
+DIR = "/Users/readingspeaks/Dropbox/Exquisite_Corpse/short_samples/CONF-1_S003_S003_T002_1.wav"
+DIR = "/Users/readingspeaks/Dropbox/Exquisite_Corpse/short_samples/20160522_122_michael_levine.wav"
 
-def get_volumes(filename, threshold=600, fraction=4):
-	fraction, ls, threshold = int(fraction), [], int(threshold)
+def get_volumes(filename, threshold=None, fraction=4):
+	fraction, ls = int(fraction), []
 	w = wave.open(filename, 'r')
 	fr = w.getframerate() / fraction
 	l = w.readframes(fr)
@@ -14,9 +17,10 @@ def get_volumes(filename, threshold=600, fraction=4):
 		l = w.readframes(fr)
 	return map(lambda l: audioop.rms(l, 2), ls), threshold, fraction
 
-def get_silence_times(volumes, threshold=600, fraction=4.0):
+def get_silence_times(volumes, threshold=450, fraction=4.0):
 	on, start, silences = False, None, []
 	threshold, fraction = int(threshold), float(fraction)
+	print threshold
 	for i, n in enumerate(volumes):
 		i = float(i)
 		if n < threshold and not on and start is None:
@@ -27,6 +31,12 @@ def get_silence_times(volumes, threshold=600, fraction=4.0):
 			on, start = False, None
 	return silences
 
+def determine_silence_threshold(volumes):
+	max_val, min_val = max(volumes), min(volumes)
+	diff = max_val - min_val
+	threshold = (diff * .1) + min_val
+	return threshold
+
 if __name__ == "__main__":
 	while True:
 		sys.stdout.flush()
@@ -34,7 +44,9 @@ if __name__ == "__main__":
 		if len(given) > 3 or len(given) <= 0:
 			print "Need at most 3 arguments"
 			continue
-		silence_args = get_volumes(*given)
+		silence_args = list(get_volumes(*given))
+		if silence_args[1] is None:
+			silence_args[1] = determine_silence_threshold(silence_args[0])
 		silences = get_silence_times(*silence_args)
 		filename = given[0].split('/')[-1]
 		output = {
@@ -45,33 +57,33 @@ if __name__ == "__main__":
 
 
 
-# for a, b, c in os.walk(DIR):
-# 	for f in c:
-# 		if '.wav' not in f:
-# 			continue
-# 		ls, audio = [], []
-# 		w = wave.open(DIR + f, 'r')
-# 		fr = w.getframerate() / 4	
-# 		l = w.readframes(fr)
-# 		while len(l) > 0:
-# 			ls.append(l)
-# 			l = w.readframes(fr)
-# 		audio = map(lambda l: audioop.rms(l, 2), ls)
-# 		max_val = max(audio)
-# 		min_val = min(audio)
-# 		average = sum(audio) / len(audio)
-# 		if 'Leveled' in f:
-# 			print len(ls), f, min_val, audio.index(min_val), max_val, audio.index(max_val), average
-# 		on = False
-# 		silences = []
-# 		start = None
-# 		for i, n in enumerate(audio):
-# 			if n < 600 and not on and not start:
-# 				on = True
-# 				start = i
-# 			elif on and start and n > 600:
-# 				silences.append((start, i))
-# 				on = False
-# 				start = None
+	# for a, b, c in os.walk(DIR):
+	# 	for f in c:
+	# 		if '.wav' not in f:
+	# 			continue
+	# 		ls, audio = [], []
+	# 		w = wave.open(DIR + f, 'r')
+	# 		fr = w.getframerate() / 4	
+	# 		l = w.readframes(fr)
+	# 		while len(l) > 0:
+	# 			ls.append(l)
+	# 			l = w.readframes(fr)
+	# 		audio = map(lambda l: audioop.rms(l, 2), ls)
+	# 		max_val = max(audio)
+	# 		min_val = min(audio)
+	# 		average = sum(audio) / len(audio)
+	# 		# if 'Leveled' in f:
+	# 		print len(ls), f, min_val, audio.index(min_val), max_val, audio.index(max_val), average
+	# 		on = False
+	# 		silences = []
+	# 		start = None
+	# 		for i, n in enumerate(audio):
+	# 			if n < 600 and not on and not start:
+	# 				on = True
+	# 				start = i
+	# 			elif on and start and n > 600:
+	# 				silences.append((start, i))
+	# 				on = False
+	# 				start = None
 
-# 		silences = map(lambda l: (l[0] * 0.25, l[1] * 0.25), silences)
+	# 		silences = map(lambda l: (l[0] * 0.25, l[1] * 0.25), silences)
