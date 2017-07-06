@@ -28,6 +28,25 @@ Array.prototype.popByIndex = function (index) {
 function getRandomInt(min, max) {
     return Math.floor(Math.random() * (max - min + 1)) + min;
 }
+var countWords = function (words) {
+  words.forEach(function (word) {
+    word = word[0];
+    if (typeof wordCounts[word] === 'undefined')
+      wordCounts[word] = 0;
+    wordCounts[word] = wordCounts[word] + 1;
+  });
+};
+var countWordFiles = function (words, identifier) {
+  words.forEach(function (word) {
+    word = word[0];
+    if (typeof wordInFiles[word] === 'undefined')
+      wordInFiles[word] = [];
+    var w = wordInFiles[word];
+    if (w.indexOf(identifier) === -1)
+      wordInFiles[word].push(identifier);
+  });
+
+}
 silences.stdout.on('data', function (data) {
   data = JSON.parse(data.trim());
   if (allData[data.filename] === 'undefined')
@@ -36,7 +55,22 @@ silences.stdout.on('data', function (data) {
   processed++;
   if (processed === numToProcess) {
     // silences.kill();
+    getStartingSegments();
+    wordCounts = {};
+    wordInFiles = {}
+    for (var key in startingSegments) {
+      if (startingSegments.hasOwnProperty(key)) {
+        var segment = startingSegments[key];
+        var words = getWordsFromRange(key, segment);
+
+        var countedWords = countWords(words);
+        countWordFiles(words, key);
+        console.log(wordInFiles);
+      }
+    }
+    writeUpWords("startingWordCounts");
     makeClipWithSilences();
+
   }
 });
 silences.stderr.on('data', function (err) {
@@ -98,7 +132,7 @@ var processClip = function (filename, range, num) {
   var fd = fs.openSync('concat_list.txt', 'a');
   var output = "./temp_videos/" + 'output' + num + '.mov';
   var time = range[1] - range[0];
-  var command = '-i ' + config.videoFileDirectory + "/" + filename + ".mov" + ' -strict -2 -ss ' + convertTimeToTimeStamp(range[0]) + ' -t ' + convertTimeToTimeStamp(time) + ' ' + output;
+  var command = '-i ' + config.videoFileDirectory + "/" + filename + ".mov" + ' -c:v prores -profile:v 3 -strict -2 -ss ' + convertTimeToTimeStamp(range[0]) + ' -t ' + convertTimeToTimeStamp(time) + ' ' + output;
   console.log(command);
   var result = child.spawnSync('ffmpeg', command.split(' '));
   fs.writeSync(fd, "file '" + output + "'\n");
@@ -188,9 +222,34 @@ var getSegmentsFromWordList = function (wordList) {
     return d !== null;
   })
 };
+var analyzeAllClips = function () {
+  var words = countUpWords();
+};
+var isStartingClip = function () {
 
+};
+startingSegments = {};
+var getStartingSegments = function () {
+  console.log(allData);
+  for (var key in allData) {
+    if (allData.hasOwnProperty(key)) {
+      var silences = allData[key].silences;
+      var totalTime = 0, last = 0;
+      var newSilence = [[0, 0]];
+      silences.forEach(function (s) {
+        if (totalTime < config.segmentMinTime)
+          newSilence.push(s)
+        totalTime += s[1] - last;
+        last = s[1];
+      });
+      if (typeof startingSegments[key] === 'undefined')
+        startingSegments[key] = reduceToStartAndEndPoints(newSilence);
+    }
+  }
+
+};
 var makeClipWithSilences = function () {
-  var words = ["beauty"], clips, clip, word, time = 0, counter = 0;
+  var words = ["beauty"], clips, clip, word, time = 0, counter = 0, start = true;
   while ( time < config.videoDuration ) {
     for (var i = 0, length = words.length; i < length; i++) {
       clips = findClipsWithWord(words[i], usedRanges);
@@ -207,9 +266,13 @@ var makeClipWithSilences = function () {
         result = getNewPossible(word);
       }
       if (result === null) {
+        console.log("IN ANY NEW POSSIBLE");
         while (result !== null && isUsedClip(result)) {
           result = getAnyNewPossible();  
         }
+      }
+      if (start) {
+        start = false;
       }
       if (result) {
         clip = result[0];
@@ -277,6 +340,30 @@ var combineTranscript = function (fileRep) {
     return prev;
   }, {transcript: '', timestamps: []});
 };
+var wordCounts = {}, wordInFiles = {};
+var countUpWords = function (identifier) {
+  var transcript = allData[identifier];
+  if (typeof transcript !== 'undefined')
+    transcript = transcript.combinedWatson.transcript;
+  transcript.split(" ").forEach(function (word) {
+    if (typeof wordCounts[word] === 'undefined')
+      wordCounts[word] = 0;
+    wordCounts[word] = wordCounts[word] + 1;
+  });
+};
+var countUpWordFiles = function (identifier) {
+  var transcript = allData[identifier];
+  if (typeof transcript !== 'undefined')
+    transcript = transcript.combinedWatson.transcript;
+  transcript.split(" ").forEach(function (word) {
+    var w;
+    if (typeof wordInFiles[word] === 'undefined')
+      wordInFiles[word] = [];
+    w = wordInFiles[word];
+    if (w.indexOf(identifier) === -1)
+      wordInFiles[word].push(identifier);
+  });
+};
 files.forEach(function (filename) {
   // var transcriber,
   //   options = {
@@ -302,7 +389,8 @@ files.forEach(function (filename) {
       allData[identifier] = {};
     allData[identifier]['rawWatsonData'] = soundFile;
     allData[identifier]['combinedWatson'] = combineTranscript(soundFile);
-    
+    countUpWords(identifier);
+    countUpWordFiles(identifier);
     // soundFile = JSON.parse(fs.readFileSync(config.soundFileDirectory + "/" + filename, 'utf-8'));
     // soundFile = countUpTimestamps(soundFile, filename.split('.')[0]);
     // soundFile = segmentByTime(soundFile);
@@ -318,3 +406,23 @@ files.forEach(function (filename) {
 
 });
 
+var words = [];
+var writeUpWords = function (filename) {
+  if (typeof filename === 'undefined') filename = "wordCounts";
+  var sd = fs.openSync(filename + '.txt', 'w');
+for (var key in wordCounts) {
+  words.push([key, wordCounts[key]]);
+}
+words.sort(function (a, b) {
+  if (a[1] < b[1])
+    return 1;
+  else if (a[1] > b[1])
+    return -1;
+  else
+    return 0;
+});
+words.forEach(function (word) {
+  fs.writeSync(sd, word.join(":") + " " + wordInFiles[word[0]].length + "\n");// + wordInFiles[word[0]] + "\n");
+});
+
+}
