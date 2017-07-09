@@ -20,7 +20,6 @@ def get_volumes(filename, threshold=None, fraction=4):
 def get_silence_times(volumes, threshold=450, fraction=4.0):
 	on, start, silences = False, None, []
 	threshold, fraction = int(threshold), float(fraction)
-	print threshold
 	for i, n in enumerate(volumes):
 		i = float(i)
 		if n < threshold and not on and start is None:

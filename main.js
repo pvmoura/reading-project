@@ -4,16 +4,20 @@ var mostCommonWords = JSON.parse(fs.readFileSync('most_common_words.json', 'utf-
 mostCommonWords = mostCommonWords.map( function (word) { return word.toLowerCase(); } );
 var watsonTranscriber = require('./transcriber.js');
 var child = require('child_process');
-var files = fs.readdirSync(config.soundFileDirectory);
+var files = fs.readdirSync(config.transcriptsDirectory);
 var silences = child.execFile('./silences.py');
 // var wn = child.execFile('./wordnet_analysis.py');
 // files = files.filter(function(a) { return a.split('.')[1] === 'wav'; });
 // a function to 
-var numOfFiles = files.length;
+
 var processedFiles = 0;
 var processed = 0, numToProcess = 0;
 var allData = {};
 var usedClips = [];
+var graph = {};
+var time = 0;
+var edgeList = [], allTheClips = [], allTheWords;
+
 Array.prototype.popByIndex = function (index) {
   var val = this[index];
   if (typeof(val) === 'undefined' || typeof(index) !== 'number') return null;
@@ -26,70 +30,60 @@ Array.prototype.popByIndex = function (index) {
   this.pop();
   return val;
 };
-function getRandomInt(min, max) {
+var getRandomInt = function (min, max) {
     return Math.floor(Math.random() * (max - min + 1)) + min;
-}
-var countWords = function (words) {
-  words.forEach(function (word) {
-    word = word[0].toLowerCase();
-    if (mostCommonWords.indexOf(word) === -1 && word.indexOf("\'") === -1 && word != '%hesitation') {
-      if (typeof wordCounts[word] === 'undefined')
-        wordCounts[word] = 0;
-      wordCounts[word] = wordCounts[word] + 1;
-    }
-  });
 };
-var countWordFiles = function (words, identifier) {
-  words.forEach(function (word) {
-    word = word[0].toLowerCase();
-    if (mostCommonWords.indexOf(word) === -1 && word.indexOf("\'") === -1 && word != '%hesitation') {
-      if (typeof wordInFiles[word] === 'undefined')
-        wordInFiles[word] = [];
-      var w = wordInFiles[word];
-      if (w.indexOf(identifier) === -1)
-        wordInFiles[word].push(identifier);
-    }
-  });
 
-}
 silences.stdout.on('data', function (data) {
+  var soundFile, identifier = data.filename;
   data = JSON.parse(data.trim());
   if (allData[data.filename] === 'undefined')
     allData[data.filename] = {};
   allData[data.filename]['silences'] = data.silences;
   processed++;
+
   if (processed === numToProcess) {
-    // silences.kill();
-    getStartingSegments();
-    getEndingSegments();
-    writeUpWords("wordCounts");
-    ////console.log((endingSegments);
-    wordCounts = {};
-    wordInFiles = {};
     populateGraph();
-    var fd = fs.openSync('graph.txt', 'w');
-    fs.writeSync(fd, JSON.stringify(graph));
-    fs.closeSync(fd);
-    for (var key in startingSegments) {
-      if (startingSegments.hasOwnProperty(key)) {
-        var segment = startingSegments[key];
-        var words = getWordsFromRange(key, segment);
-        var countedWords = countWords(words);
-        countWordFiles(words, key);
-        //////console.log((wordInFiles);
-      }
-    }
-    writeUpWords("startingWordCounts");
-    makeClipWithSilences();
+    edgeList = createEdgeList(graph);
+    allTheWords = getAllTheWords(edgeList);
+    // silences.kill();
+    // getStartingSegments();
+    // getEndingSegments();
+    // writeUpWords("wordCounts");
+    // ////(endingSegments);
+    // wordCounts = {};
+    // wordInFiles = {};
+    // populateGraph();
+    // var fd = fs.openSync('graph.txt', 'w');
+    // fs.writeSync(fd, JSON.stringify(graph));
+    // fs.closeSync(fd);
+    // for (var key in startingSegments) {
+    //   if (startingSegments.hasOwnProperty(key)) {
+    //     var segment = startingSegments[key];
+    //     var words = getWordsFromRange(key, segment);
+    //     var countedWords = countWords(words);
+    //     countWordFiles(words, key);
+    //     //////(wordInFiles);
+    //   }
+    // }
+    // writeUpWords("startingWordCounts");
+    // makeClipWithSilences();
+
+    path = getPath(allTheWords.popByIndex(0), allTheClips, edgeList);
+    path.forEach(function (item, i) {
+      console.log(item);
+      // processClip(item[1], item[2], i);
+    });
+    // makeVideo();
 
   }
 });
 silences.stderr.on('data', function (err) {
-  //////console.log((err);
+  console.log(err);
 });
 
 
-var getWordTimestamps = function (filename, word) {
+var getTimestampsForOneWord = function (filename, word) {
   var clip = allData[filename], timestamps;
   if (typeof clip === 'undefined') return null;
   timestamps = clip.combinedWatson.timestamps;
@@ -99,26 +93,6 @@ var getWordTimestamps = function (filename, word) {
   return timestamps;
 };
 
-var getAllSilenceRanges = function (filename, timestamp) {
-  var start = timestamp[1], clip = allData[filename], silences = clip.silences;
-  var lastBeforeWord, totalTime = 0, startTime;
-  silences.forEach(function (s, i) {
-    if (s[1] < start)
-      lastBeforeWord = i;
-  });
-  silences = silences.slice(lastBeforeWord);
-  if (silences.length == 0) return silences;
-  startTime = silences[0][1];
-  return silences.filter(function (s) {
-    var keep = false;
-    if (totalTime <= config.segmentMinTime) {
-      keep = true;
-    }
-    totalTime += s[1] - startTime;
-    startTime = s[1];
-    return keep;
-  });
-};
 var getWordsFromRange = function (filename, range) {
   var clip = allData[filename], timestamps = clip.combinedWatson.timestamps;
   var start, end;
@@ -130,6 +104,7 @@ var getWordsFromRange = function (filename, range) {
   });
   return timestamps.slice(start, end + 1);
 };
+
 var convertTimeToTimeStamp = function (time) {
   var seconds = time % 60;
   var minutes = parseInt(time / 60, 10);
@@ -137,22 +112,28 @@ var convertTimeToTimeStamp = function (time) {
   var timeList = [hours.toString(), minutes.toString(), seconds.toString()];
   timeList = timeList.map(function (t) { return t.length === 1 ? "0" + t : t; });
   return timeList.join(":");
+};
+
+var goToEnd = function () {
 
 };
+
 var processClip = function (filename, range, num) {
   var fd = fs.openSync('concat_list.txt', 'a');
   var output = "./temp_videos/" + 'output' + num + '.mov';
   var time = range[1] - range[0];
   var command = '-i ' + config.videoFileDirectory + "/" + filename + ".mov" + ' -c:v prores -profile:v 3 -strict -2 -ss ' + convertTimeToTimeStamp(range[0]) + ' -t ' + convertTimeToTimeStamp(time) + ' ' + output;
-  //////console.log((command);
+  console.log(command);
   var result = child.spawnSync('ffmpeg', command.split(' '));
   fs.writeSync(fd, "file '" + output + "'\n");
   fs.closeSync(fd);
 };
+
 var makeVideo = function () {
   child.spawnSync('ffmpeg', '-f concat -safe 0 -i concat_list.txt -c copy final_output.mov'.split(' '));
-}
-var getWordsFromClip = function (words) {
+};
+
+var filterUndesirableWords = function (words, halve) {
   words = words.map(function (w) {
     return w[0];
   });
@@ -161,63 +142,17 @@ var getWordsFromClip = function (words) {
     return mostCommonWords.indexOf(w) === -1 && w.indexOf("\'") === -1 && w != '%hesitation';
   });
   // filter by words in the word counts
-  return words.slice(words.length / 2);
+  if (halve)
+    words = words.slice(words.length / 2);
+  return words;
   
 };
 
-var usedRanges = [], possibleRanges = {};
+
 var numberInRange = function (number, rangeStart, rangeEnd) {
   return number <= rangeEnd && number >= rangeStart;
-}
-var isUsedClip = function (resultObj) {
-  //////console.log((resultObj, "IN USED CLIP");
-  var filename = resultObj[0], rangeLow = resultObj[1][0], rangeHigh = resultObj[1][1], used = false;
-  usedRanges.forEach(function (r) {
-    
-    if (r[0] === filename) {
-      used = true;
-      if (numberInRange(rangeLow, r[1][0], r[1][1]) ||
-          numberInRange(rangeHigh, r[1][0], r[1][1])) {
-        //////console.log((r[1][0], r[1][1], r, resultObj);
-        used = true;
-      }
-        
-    }
-  });
-  return used;
 };
 
-var getNewPossible = function (word) {
-  var ranges = possibleRanges[word];
-  if (typeof ranges === 'undefined') return null;
-  return ranges.popByIndex(getRandomInt(0, ranges.length - 1));
-};
-var getAnyNewPossible = function () {
-  for (var key in possibleRanges) {
-    if (possibleRanges.hasOwnProperty(key)) {
-      if (possibleRanges[key].length > 0)
-        return possibleRanges[key].popByIndex(getRandomInt(0, possibleRanges[key].length - 1));
-    }
-  }
-  return null;
-};
-var graph = {};
-var populateGraph = function () {
-  for (var key in allData) {
-    if (allData.hasOwnProperty(key)) {
-      graph[key] = {};
-      var words = allData[key].combinedWatson.timestamps;
-      words = words.map(function (w) { return w[0].toLowerCase(); });
-
-      words = words.filter(function (word) {
-        return mostCommonWords.indexOf(word) === -1 && word.indexOf("\'") === -1 && word != '%hesitation';
-      });
-      words.forEach(function (word) {
-        graph[key][word] = findClipsWithWord(word, key);
-      });
-    }
-  }
-};
 var findClipsWithWord = function (word, usedClip) {
   var clip, clips = [], clipWord, transcript, temp;
   for (var key in allData) {
@@ -230,225 +165,35 @@ var findClipsWithWord = function (word, usedClip) {
   }
   return clips;
 };
+
+var populateGraph = function () {
+  for (var key in allData) {
+    if (allData.hasOwnProperty(key)) {
+      graph[key] = {};
+      var words = allData[key].combinedWatson.timestamps;
+      words = words.map(function (w) { return w[0].toLowerCase(); });
+
+      words = words.filter(function (word) {
+        word = word;
+        return mostCommonWords.indexOf(word) === -1 && word.indexOf("\'") === -1 && word != '%hesitation';
+      });
+      words.forEach(function (word) {
+        var clips =  findClipsWithWord(word, key);
+        graph[key][word] = clips.map(function (clip) {
+          var ret_val = [clip];
+          var timestamps = getTimestampsForOneWord(clip, word);
+          ret_val = ret_val.concat(timestamps);
+          return ret_val;
+        });
+      });
+    }
+  }
+};
+
 var reduceToStartAndEndPoints = function (silenceRange) {
   return [ silenceRange[0][0], silenceRange[silenceRange.length - 1][1] ];
 };
-var getSegmentsFromWordList = function (wordList) {
-  var clips = wordList.map(function (word) {
-    var d = {}, clipsWithWord = findClipsWithWord(word), timestamps;
-    clipsWithWord.forEach(function (c) {
-      var timestamps = getWordTimestamps(c, word);
-      timestamps.forEach(function (t) {
-        var s = getAllSilenceRanges(c, t);
-        s = reduceToStartAndEndPoints(s);
-      });
-    });
-    timestamps = getWordTimestamps
-    d[word] = findClipsWithWord(word);
-    return d;
-  });
-  return clips.filter(function (d) {
-    return d !== null;
-  })
-};
-var analyzeAllClips = function () {
-  var words = countUpWords();
-};
-var isStartingClip = function () {
 
-};
-var startingSegments = {}, endingSegments = {};
-var getStartingSegments = function () {
-  for (var key in allData) {
-    if (allData.hasOwnProperty(key)) {
-      var silences = allData[key].silences;
-      var totalTime = 0, last = 0;
-      var newSilence = [[0, 0]];
-      silences.forEach(function (s) {
-        if (totalTime < config.segmentMinTime)
-          newSilence.push(s)
-        totalTime += s[1] - last;
-        last = s[1];
-      });
-      ////console.log((newSilence);
-      if (typeof startingSegments[key] === 'undefined')
-        startingSegments[key] = reduceToStartAndEndPoints(newSilence);
-    }
-  }
-
-};
-var getEndingSegments = function () {
-  for (var key in allData) {
-    if (allData.hasOwnProperty(key)) {
-      var silences = allData[key].silences;
-      ////console.log((silences, key);
-      var totalTime = 0, last = silences[silences.length - 1][1];
-      var newSilence = [silences[silences.length - 1]];
-      for (var i = silences.length - 2; i > 0; i--) {
-        if (totalTime < config.segmentMinTime)
-          newSilence.push(silences[i]);
-        totalTime += last - silences[i][0];
-        last = silences[i][1];
-      }
-      //console.log((key, newSilence);
-      if (typeof endingSegments[key] === 'undefined') {
-        endingSegments[key] = [newSilence[newSilence.length - 1][0], newSilence[0][1]];
-      }
-    }
-  }
-};
-var time = 0;
-var addToUsedClips = function (clip) {
-  usedClips.push(clip);
-};
-var processLastClip = function (result, counter) {
-  var clip = result[0];
-  //////console.log((result);
-  addToUsedClips(clip);
-  processClip(clip, result[1], counter);
-  addUsedRanges(result);
-  counter++;
-  time += result[1][1] - result[1][0];
-  words = getWordsFromRange(result[0], result[1]);
-  words = getWordsFromClip(words);
-  return words;
-};
-var getEndingClips = function (usedClips) {
-  var ends = [];
-  for (var key in endingSegments) {
-    if (usedClips.indexOf(key) === -1)
-      ends.push([key, endingSegments[key]]);
-  }
-  return ends;
-};
-var wordInClip = function (clip, range, word) {
-  words = getWordsFromRange(clip, range);
-  words = words.map( function (w) { return w[0].toLowerCase(); } );
-  ////console.log((words);
-  return words.indexOf(word.toLowerCase()) !== -1;
-}
-var makeClipWithSilences = function () {
-  var words = ["child"], clips, clip, word, shortCounter = 0, counter = 0, start = true, result, ending = true;
-  while ( time < config.videoDuration ) {
-    if (!start) {
-      ////console.log((words, "WORDS");
-    for (var i = 0, length = words.length; i < length; i++) {
-      if (shortCounter > 1) {
-        clips = getEndingClips(usedClips);
-        clips = clips.filter(function (clip) {
-          return wordInClip(clip[0], clip[1], words[i]);
-        });
-        ending = true;
-      } else {
-        clips = findClipsWithWord(words[i], usedClips);
-        ending = false;
-      }
-      if (clips.length > 0) {
-        break;
-      }
-    }
-    // clips = getClipsFromWordList(words);
-    if (clips && clips.length > 0) {
-      if (ending) {
-        shortCounter = 0;
-        ending = false;
-        start = true;
-        result = clips[getRandomInt(0, clips.length - 1)];
-        counter++;
-        processLastClip(result, counter);
-      }
-      word = words.popByIndex(i);
-      result = getWords(clips, word);
-      while (result !== null && isUsedClip(result)) {
-        ////console.log((possibleRanges, usedRanges, result);
-        result = getNewPossible(word);
-      }
-
-      // if (result === null) {
-      //   ////console.log(("IN ANY NEW POSSIBLE");
-      //   while (result !== null && isUsedClip(result)) {
-      //     result = getAnyNewPossible();  
-      //   }
-      // }
-      if (result) {
-        counter++;
-        shortCounter++;
-        words = processLastClip(result, counter);
-        // clip = result[0];
-        // //////console.log((result);
-        // processClip(clip, result[1], counter);
-        // addUsedRanges(result);
-        // counter++;
-        // time += result[1][1] - result[1][0];
-        // words = getWordsFromRange(result[0], result[1]);
-        // words = getWordsFromClip(words);
-      } else {
-        words = JSON.parse(child.execFileSync('./wordnet_analysis.py', [words[getRandomInt(0, words.length)]]));  
-      }
-      
-    } else {
-      if (ending) {
-        ending = false; shortCounter = 0;
-      }
-      words = JSON.parse(child.execFileSync('./wordnet_analysis.py', [words[getRandomInt(0, words.length)]]));
-      if (words.length == 0) {
-        words = ["and"];
-      }
-    }
-  } else {
-    var l = dictToList(startingSegments);
-    result = l[getRandomInt(0, l.length - 1)];
-    ////console.log((result);
-    words = processLastClip(result, counter);
-    start = false;
-  }
-  }
-  makeVideo();
-};
-var dictToList = function (dict) {
-  l = [];
-  for (var key in dict) {
-    l.push([key, dict[key]]);
-  }
-  return l;
-};
-
-var addPossibleRanges = function (filename, timestamps, word) {
-  if (typeof possibleRanges[word] === 'undefined')
-    possibleRanges[word] = [];
-  possibleRanges[word].push([filename, timestamps]);
-  return possibleRanges;
-};
-
-var pickAPossibleRange = function (possibleRanges, word) {
-  var rand, range;
-  if (typeof possibleRanges[word] !== 'undefined') {
-    rand = getRandomInt(0, possibleRanges[word].length - 1);
-    range = possibleRanges[word].popByIndex(rand);
-    return range;
-  }
-  return null;
-};
-
-var addUsedRanges = function (range) {
-  usedRanges.push(range);
-};
-var getWords = function (clips, startingWord) {
-  var clip, timestamps, rand, words;
-  clips.forEach(function (c) {
-    timestamps = getWordTimestamps(c, startingWord);
-    timestamps.forEach(function (t) {
-      var s = getAllSilenceRanges(c, t);
-      s = [ s[0][0], s[s.length - 1][1] ];
-      addPossibleRanges(c, s, startingWord);
-    });
-    
-  });
-  range = pickAPossibleRange(possibleRanges, startingWord);
-  if (range === null) return range;
-  return range;
-};
-var soundFiles = [], rankedSoundFiles = [], videoDuration = 0, used = [];
 var combineTranscript = function (fileRep) {
   return fileRep.reduce(function (prev, curr, arr, i) {
     var timestamps = curr.timestamps.map(function (w) {
@@ -457,64 +202,18 @@ var combineTranscript = function (fileRep) {
     prev.transcript += curr.transcript.toLowerCase();
     prev.timestamps = prev.timestamps.concat(timestamps);
     // if (prev.transcript.indexOf('love') !== -1)
-    //   console.log(prev.transcript);
+    //   prev.transcript);
     return prev;
   }, {transcript: '', timestamps: []});
 };
-var wordCounts = {}, wordInFiles = {};
-var countUpWords = function (identifier) {
-  var transcript = allData[identifier];
-  if (typeof transcript !== 'undefined')
-    transcript = transcript.combinedWatson.transcript;
-  transcript.split(" ").forEach(function (word) {
-    word = word.toLowerCase();
-    if (mostCommonWords.indexOf(word) === -1 && word.indexOf("\'") === -1 && word != '%hesitation') {
-    if (typeof wordCounts[word] === 'undefined')
-      wordCounts[word] = 0;
-    wordCounts[word] = wordCounts[word] + 1;
-    }
-  });
-};
-var countUpWordFiles = function (identifier) {
-  var transcript = allData[identifier];
-  if (typeof transcript !== 'undefined')
-    transcript = transcript.combinedWatson.transcript;
-  transcript.split(" ").forEach(function (word) {
-    var w, word = word.toLowerCase();
-    if (mostCommonWords.indexOf(word) === -1 && word.indexOf("\'") === -1 && word != '%hesitation') {
-    if (typeof wordInFiles[word] === 'undefined')
-      wordInFiles[word] = [];
-    w = wordInFiles[word];
-    if (w.indexOf(identifier) === -1)
-      wordInFiles[word].push(identifier);
-    }
-  });
-};
 
-var writeUpWords = function (filename) {
-  var words = [];
-  if (typeof filename === 'undefined') filename = "wordCounts";
-  var sd = fs.openSync(filename + '.txt', 'w');
-for (var key in wordCounts) {
-  words.push([key, wordCounts[key], wordInFiles[key].length]);
-}
-words.sort(function (a, b) {
-  if (a[2] < b[2])
-    return 1;
-  else if (a[2] > b[2])
-    return -1;
-  else
-    return 0;
-});
-words.forEach(function (word) {
-  fs.writeSync(sd, word.join(":") + "\n"); // + " " + wordInFiles[word[0]].length + "\n");
-});
-
-};
-var findNewWord = function (clip, usedClips, usedWords) {
+var findNewWord = function (clip, wordChoices, oldWord, usedClips, usedWords) {
   for (var word in graph[clip]) {
-    if (usedWords.indexOf(word) !== -1)
-      continue;
+    // if (usedWords.indexOf(word) !== -1)
+    //   continue;
+    if (graph[clip].hasOwnProperty(word)) {
+
+    }
     var clips = graph[clip][word];
     clips = clips.filter(function (c) {
       return usedClips.indexOf(c) === -1;
@@ -523,32 +222,133 @@ var findNewWord = function (clip, usedClips, usedWords) {
       return word;
   }
 };
-var getNewClip = function (word, clip, usedClips) {
-  var clips = edgeList[word];
-  clips = clips.filter(function (c) {
-    return c[0] === clip && usedClips.indexOf(c[1]) === -1;
+
+var orderByConnections = function (wordList) {
+  wordList.sort(function (a, b) {
+    if (edgeList[a].length < edgeList[b].length)
+      return 1;
+    else if (edgeList[a].length > edgeList[b].length)
+      return -1;
+    else
+      return 0;
   });
-  return clips[getRandomInt(0, clips.length - 1)];
-}
+  return wordList;
+};
+
+
+
+// analysis phase pick up every word that occurs between two or three chunks from an end
+// choose 
+// we have to make sure that the words in the SEGMENT have a next CLIP (IE the prunedWords
+// LEAD to another clip). That's the search you have to do at the beginning.
+// You don't just pick a 
+
+var makeSureClipSegmentHasConnection = function (wordsInSegment, word) {
+  var temp = filterUndesirableWords(wordsInSegment);
+  temp = temp.filter(function (w) {
+    return w != word && edgeList[w].length;
+  });
+  return temp.length > 0;
+};
+
+var translateToSegments = function (clip, word) {
+  var theWordsTimestamps = getTimestampsForOneWord(clip, word);
+  if (typeof theWordsTimestamps === 'undefined') return false;
+  return theWordsTimestamps.map(function (timestamp) {
+    var wordStartStamp = timestamp[1];
+    var range = [wordStartStamp, wordStartStamp + (config.segmentMinTime)]
+    return wordsInSegment = getWordsFromRange(clip, range);
+  });
+};
+
+var drawRandomlyFromArray = function (arr) {
+  return arr[getRandomInt(0, arr.length - 1)];
+};
+
+var getClosestSilenceRange = function (clip, wordTimestamps, goToEnd) {
+  var silences = allData[clip].silences, start = wordTimestamps[0][1],
+  end = wordTimestamps[wordTimestamps.length - 1][1];
+  var startSilences = silences.filter(function (s) {
+    return s[0] <= start;
+  });
+  var startSilence = startSilences[startSilences.length - 1];
+  if (typeof startSilence === 'undefined') startSilence = 0;
+  else startSilence = startSilence[0];
+  var endSilences = silences.filter(function (s) {
+    return s[0] >= end; 
+  });
+
+  var endSilence = endSilences[0];
+  if (typeof endSilence === 'undefined' || goToEnd) endSilence = silences[silences.length - 1][1];
+  else endSilence = endSilence[1];
+  // console.log(silences, start, end, startSilences, endSilences, startSilence, endSilence, "HELLLLLO");
+  return [startSilence, endSilence];
+};
+
+var getNewStart = function (list, word, usedClips) {
+  var possibles = list.filter(function (c) {
+    return usedClips.indexOf(c[0]) === -1 && usedClips.indexOf(c[1][0]) === -1; 
+  });
+  return drawRandomlyFromArray(possibles);
+};
+var getNewWord = function (word, clip, segment, usedWords, usedClips) {
+  usedWords.push(word);
+  usedClips.push(clip);
+  segment = filterUndesirableWords(segment);
+  segment = orderByConnections(segment);
+  segment = segment.filter(function (w) {
+    return usedWords.indexOf(w) === -1;
+  });
+  return segment[0];
+};
 var getPath = function (word, clips, edgeList) {
-  var path = [], usedClips = [], start = edgeList[word].pop(), usedWords = [], clip = start[0], counter = 0;
-  while (clips.length > 0) {
-    counter++;
-    usedWords.push(word);
-    console.log(clip, clips.indexOf(clip));
-    clips.popByIndex(clips.indexOf(clip));
-    path.push([clip, word]);
-    clip = start[1];
-    word = findNewWord(clip, usedClips, usedWords);
-    clip = getNewClip(word, clip, usedClips)[1];
-    console.log(clips.length, path, usedWords);
-    if (counter > 10)
-      break;
-    // figure out why the loop becomes infinite
-    // when it becomes infinite, call it an end, a leaf node
-    // once you've reached an end, start again with a start clip that hasn't been used yet
-    // keep going until you've used all the clips
+  var path = [], segment, possibleList, start, clip, wordsInSegment, wordsTimestamps, usedClips = [], usedWords = [], counter = 0;
+  
+  // go down edgeList for the word until you have a connection
+  
+  
+  while (time < config.videoDuration) {
+    possibleList = edgeList[word];
+    start = getNewStart(possibleList, word, usedClips);
+    while (edgeList[word].length > 0 && typeof start !== 'undefined') {
+      
+      // console.log(path, word, clip, start, path.length, possibleList);
+      // console.log(path, path.length, time);
+      clip = start[0];
+      segments = translateToSegments(clip, word);
+      segments = segments.filter(function (s) {
+        return makeSureClipSegmentHasConnection(s, word);
+      });
+      segment = drawRandomlyFromArray(segments);
+      // need to work on getting out of a clip that doesn't have a segment 
+      // console.log(segments.length, segment);
+      if (segment) {
+        if (config.videoDuration - time < 20)
+          silenceRange = getClosestSilenceRange(clip, segment, true);
+        else
+          silenceRange = getClosestSilenceRange(clip, segment);
+        path.push([word, clip, silenceRange]);
+        word = getNewWord(word, clip, segment, usedWords, usedClips);
+        usedClips.push(clip);
+        clip = start[1][0];
+        possibleList = edgeList[word];
+        start = getNewStart(possibleList, word, usedClips);
+        time += silenceRange[1] - silenceRange[0];
+      }
+    };
+    // console.log("HELLO", word, start);
+    // need to check the current clip to get a new word;
+    if (edgeList[word].length == 0 || typeof start === 'undefined') {
+      if (!segment || typeof start === 'undefined')
+      word = allTheWords.pop(0);
+      else {
+        word = get
+      }
+      continue;
+    }
+
   }
+  return path;
 };
 var createEdgeList = function (graph) {
   var edges = {};
@@ -570,8 +370,9 @@ var createEdgeList = function (graph) {
     }
   }
   return edges;
-}
-var edgeList = [], allTheClips = [];
+};
+
+
 files.forEach(function (filename) {
   // var transcriber,
   //   options = {
@@ -590,37 +391,38 @@ files.forEach(function (filename) {
   var soundFile, rankedSoundFile = [], identifier = filename.split('.')[0];
   if (filename.split('.')[1] === 'json') {
     numToProcess++;
-    // silences.stdin.write(config.waveFileDirectory + identifier + '.wav\n');
-    soundFile = JSON.parse(fs.readFileSync(config.soundFileDirectory + "/" + filename, 'utf-8'));
-    
+    silences.stdin.write(config.waveFileDirectory + identifier + '.wav\n');
+    soundFile = JSON.parse(fs.readFileSync(config.transcriptsDirectory + "/" + identifier + '.json', 'utf-8'));
+
     if (typeof allData[identifier] === 'undefined')
       allData[identifier] = {};
     allData[identifier]['rawWatsonData'] = soundFile;
     allData[identifier]['combinedWatson'] = combineTranscript(soundFile);
     allTheClips.push(identifier);
-    // countUpWords(identifier);
-    // countUpWordFiles(identifier);
-    // soundFile = JSON.parse(fs.readFileSync(config.soundFileDirectory + "/" + filename, 'utf-8'));
-    // soundFile = countUpTimestamps(soundFile, filename.split('.')[0]);
-    // soundFile = segmentByTime(soundFile);
-    // soundFile = wordVariety(soundFile);
-    // rankedSoundFile = rankInterestingness(soundFile, filename.split('.')[0]);
-    // rankedSoundFile.forEach(function (s) {
-    //   rankedSoundFiles.push(s);
-    // });
-    // soundFile.forEach(function (s) {
-    //   soundFiles.push(s);
-    // });
   }
 
 });
-  populateGraph();
-  edgeList = createEdgeList(graph);
-  var fd = fs.openSync('graph.txt', 'w');
-  fs.writeSync(fd, JSON.stringify(graph));
-  fs.closeSync(fd);
+var getAllTheWords = function (edgeList) {
+  words = [];
+  for (var key in edgeList) {
+    if (edgeList.hasOwnProperty(key)) {
+      words.push([key, edgeList[key]]);
+    }
+  }
+  words.sort(function (a, b) {
+    if (a[1].length < b[1].length)
+      return 1;
+    else if (a[1].length > b[1].length)
+      return -1;
+    else
+      return 0;
+  });
+  return words.map(function (w) { return w[0]; });
+}
+  // var fd = fs.openSync('graph.txt', 'w');
+  // fs.writeSync(fd, JSON.stringify(graph));
+  // fs.closeSync(fd);
   // var fd = fs.openSync('edgeList.txt', 'w');
   // fs.writeSync(fd, JSON.stringify(edgeList));
   // fs.closeSync(fd);
-  console.log(edgeList['love'], "HELLLLLO");
-  getPath("love", allTheClips, edgeList);
+  // edgeList['love'], "HELLLLLO");
