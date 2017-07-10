@@ -339,7 +339,7 @@ var findSimilarSegment = function (segments, segment) {
   return similar.length ? similar.popByIndex(getRandomInt(0, similar.length - 1)) : null;
 }
 var callback = function (err, data, filename) {
-  var fd = fs.openSync('./transcripts/' + filename.split('.')[0] + '.txt', 'a');
+  var fd = fs.openSync('./reading-transcripts/' + filename.split('.')[0] + '.txt', 'a');
   fs.writeSync(fd, JSON.stringify(data));
   fs.closeSync(fd);
 };

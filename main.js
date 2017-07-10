@@ -54,9 +54,9 @@ silences.stdout.on('data', function (data) {
     // wordCounts = {};
     // wordInFiles = {};
     // populateGraph();
-    // var fd = fs.openSync('graph.txt', 'w');
-    // fs.writeSync(fd, JSON.stringify(graph));
-    // fs.closeSync(fd);
+    var fd = fs.openSync('edgeList.txt', 'w');
+    fs.writeSync(fd, JSON.stringify(edgeList));
+    fs.closeSync(fd);
     // for (var key in startingSegments) {
     //   if (startingSegments.hasOwnProperty(key)) {
     //     var segment = startingSegments[key];
@@ -72,9 +72,9 @@ silences.stdout.on('data', function (data) {
     path = getPath(allTheWords.popByIndex(0), allTheClips, edgeList);
     path.forEach(function (item, i) {
       console.log(item);
-      // processClip(item[1], item[2], i);
+      processClip(item[1], item[2], i);
     });
-    // makeVideo();
+    makeVideo();
 
   }
 });
@@ -120,7 +120,7 @@ var goToEnd = function () {
 
 var processClip = function (filename, range, num) {
   var fd = fs.openSync('concat_list.txt', 'a');
-  var output = "./temp_videos/" + 'output' + num + '.mov';
+  var output = config.tempDirectory + 'output' + num + '.mov';
   var time = range[1] - range[0];
   var command = '-i ' + config.videoFileDirectory + "/" + filename + ".mov" + ' -c:v prores -profile:v 3 -strict -2 -ss ' + convertTimeToTimeStamp(range[0]) + ' -t ' + convertTimeToTimeStamp(time) + ' ' + output;
   console.log(command);
@@ -286,20 +286,21 @@ var getClosestSilenceRange = function (clip, wordTimestamps, goToEnd) {
 };
 
 var getNewStart = function (list, word, usedClips) {
+  if (typeof list === 'undefined') return;
   var possibles = list.filter(function (c) {
     return usedClips.indexOf(c[0]) === -1 && usedClips.indexOf(c[1][0]) === -1; 
   });
   return drawRandomlyFromArray(possibles);
 };
 var getNewWord = function (word, clip, segment, usedWords, usedClips) {
-  usedWords.push(word);
+  // usedWords.push(word);
   usedClips.push(clip);
   segment = filterUndesirableWords(segment);
   segment = orderByConnections(segment);
-  segment = segment.filter(function (w) {
-    return usedWords.indexOf(w) === -1;
-  });
-  return segment[0];
+  // segment = segment.filter(function (w) {
+  //   return usedWords.indexOf(w) === -1;
+  // });
+  return segment[getRandomInt(0, parseInt(segment.length / 3, 0))];
 };
 var getPath = function (word, clips, edgeList) {
   var path = [], segment, possibleList, start, clip, wordsInSegment, wordsTimestamps, usedClips = [], usedWords = [], counter = 0;
@@ -310,10 +311,10 @@ var getPath = function (word, clips, edgeList) {
   while (time < config.videoDuration) {
     possibleList = edgeList[word];
     start = getNewStart(possibleList, word, usedClips);
-    while (edgeList[word].length > 0 && typeof start !== 'undefined') {
+    while (edgeList[word] && edgeList[word].length > 0 && typeof start !== 'undefined') {
       
       // console.log(path, word, clip, start, path.length, possibleList);
-      // console.log(path, path.length, time);
+      console.log(path, path.length, time, usedClips);
       clip = start[0];
       segments = translateToSegments(clip, word);
       segments = segments.filter(function (s) {
@@ -323,26 +324,29 @@ var getPath = function (word, clips, edgeList) {
       // need to work on getting out of a clip that doesn't have a segment 
       // console.log(segments.length, segment);
       if (segment) {
-        if (config.videoDuration - time < 20)
+        if (config.videoDuration - time <= 20)
           silenceRange = getClosestSilenceRange(clip, segment, true);
         else
           silenceRange = getClosestSilenceRange(clip, segment);
         path.push([word, clip, silenceRange]);
         word = getNewWord(word, clip, segment, usedWords, usedClips);
-        usedClips.push(clip);
+        // usedClips.push(clip);
         clip = start[1][0];
+        console.log(clip);
         possibleList = edgeList[word];
-        start = getNewStart(possibleList, word, usedClips);
+        start = getNewStart(possibleList, word, usedClips);  
+        console.log(start);
         time += silenceRange[1] - silenceRange[0];
       }
     };
     // console.log("HELLO", word, start);
     // need to check the current clip to get a new word;
-    if (edgeList[word].length == 0 || typeof start === 'undefined') {
-      if (!segment || typeof start === 'undefined')
+    if (/*edgeList[word].length == 0 || */typeof start === 'undefined') {
       word = allTheWords.pop(0);
+      if (!segment || typeof start === 'undefined')
+        word = word;
       else {
-        word = get
+        // word = get
       }
       continue;
     }
