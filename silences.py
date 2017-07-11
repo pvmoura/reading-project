@@ -1,23 +1,26 @@
 #! /usr/bin/python 
 
-import audioop, wave, os, sys, json
+import audioop, wave, os, sys, json, contextlib
 #DIR = '/home/pedro/Dropbox/Exquisite_Corpse/short_samples/20160522_109_jody_azzouni_1.wav'
 #DIR = '/home/pedro/Dropbox/Exquisite_Corpse/Sample audio 060217/'
 DIR = "/Users/readingspeaks/Dropbox/Exquisite_Corpse/short_samples/20160521_096_daniel_browne.wav"
 DIR = "/Users/readingspeaks/Dropbox/Exquisite_Corpse/short_samples/CONF-1_S003_S003_T002_1.wav"
 DIR = "/Users/readingspeaks/Dropbox/Exquisite_Corpse/short_samples/20160522_122_michael_levine.wav"
+DIR = "/Users/pedrovmoura/Dropbox/Exquisite_Corpse/short_samples/20160522_122_michael_levine.wav"
 
 def get_volumes(filename, threshold=None, fraction=4):
-	fraction, ls = int(fraction), []
-	w = wave.open(filename, 'r')
-	fr = w.getframerate() / fraction
-	l = w.readframes(fr)
-	while len(l) > 0:
-		ls.append(l)
+	fraction, ls, length = int(fraction), [], None
+	with contextlib.closing(wave.open(filename, 'r')) as w:
+		framerate = w.getframerate()
+		length = w.getnframes() / float(framerate)
+		fr = framerate / fraction
 		l = w.readframes(fr)
-	return map(lambda l: audioop.rms(l, 2), ls), threshold, fraction
+		while len(l) > 0:
+			ls.append(l)
+			l = w.readframes(fr)
+	return map(lambda l: audioop.rms(l, 2), ls), threshold, fraction, length
 
-def get_silence_times(volumes, threshold=450, fraction=4.0):
+def get_silence_times(volumes, threshold=450, fraction=4.0, length=None):
 	on, start, silences = False, None, []
 	threshold, fraction = int(threshold), float(fraction)
 	for i, n in enumerate(volumes):
@@ -28,7 +31,7 @@ def get_silence_times(volumes, threshold=450, fraction=4.0):
 		elif on and start is not None and n > threshold:
 			silences.append([start, i / fraction])
 			on, start = False, None
-	return silences
+	return silences, length
 
 def determine_silence_threshold(volumes):
 	max_val, min_val = max(volumes), min(volumes)
@@ -46,11 +49,12 @@ if __name__ == "__main__":
 		silence_args = list(get_volumes(*given))
 		if silence_args[1] is None:
 			silence_args[1] = determine_silence_threshold(silence_args[0])
-		silences = get_silence_times(*silence_args)
+		silences, length = get_silence_times(*silence_args)
 		filename = given[0].split('/')[-1]
 		output = {
 			'filename': filename.replace('Leveled-_', '').split('.')[0],
-			'silences': silences
+			'silences': silences,
+			'fileLength': length
 		}
 		sys.stdout.write(json.dumps(output) + "\n")
 
