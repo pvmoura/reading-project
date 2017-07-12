@@ -18,7 +18,7 @@ var graph = {};
 var time = 0;
 var edgeList = [], allTheClips = [], allTheWords, usedSegments = {};
 var startingSegments = {};
-
+var shortSilences = [];
 Array.prototype.popByIndex = function (index) {
   var val = this[index];
   if (typeof(val) === 'undefined' || typeof(index) !== 'number') return null;
@@ -51,8 +51,19 @@ silences.stdout.on('data', function (data) {
     populateGraph();
     edgeList = createEdgeList(graph);
     allTheWords = getAllTheWords(edgeList);
+    shortSilences = getShortSilences();
     // silences.kill();
     getStartingSegments();
+    shortSilences.sort(function (a, b) {
+      var diffA = a[1][1] - a[1][0], diffB = b[1][1] - b[1][0];
+      if (diffA < diffB)
+        return 1;
+      else if (diffA > diffB)
+        return -1;
+      else
+        return 0;
+    });
+
     // getEndingSegments();
     // writeUpWords("wordCounts");
     // ////(endingSegments);
@@ -353,7 +364,7 @@ var filterConnectionsSegmentsByUsedSegments = function (possibleConnections, use
   });
 };
 var filterConnectionsListByUsedClips = function (possibleConnections, usedClips) {
-  console.log(usedClips);
+  // console.log(usedClips);
   return possibleConnections.filter(function (connection) {
     return usedClips.indexOf(connection[0]) === -1 && usedClips.indexOf(connection[1]) === -1;
   });
@@ -473,10 +484,14 @@ var translatePickedConnectionSegmentToSilenceRange = function (connectionSegment
     return [ [word, start[0], startSilences ], [ word, end[0], endSilences ] ]
   });
 };
-var updateTime = function (time, nextPath) {
+var updateTime = function (time, nextPath, clipLengths) {
   var start = nextPath[0], end = nextPath[1];
   var startSilences = start[2], endSilences = end[2];
-  return time + (startSilences[1] - startSilences[0]) + (endSilences[1] - endSilences[0]);
+  var startSegment = startSilences[1] - startSilences[0],
+      endSegment = endSilences[1] - endSilences[0];
+  clipLengths.push(startSegment);
+  clipLengths.push(endSegment);
+  return time + startSegment + endSegment;
 };
 var addUsedThings = function (connection, nextPath, usedSegments, usedClips, usedWords, word) {
   addUsedSegments(nextPath[0][1], nextPath[0][2], usedSegments);
@@ -511,12 +526,48 @@ var orderStartingSegmentsByConnections = function (startingSegments, edgeList, u
       return 0;
   });
   return ordered;
+};
+
+var getShortSilences = function () {
+  for (var key in allData) {
+    if (allData.hasOwnProperty(key)) {
+      var esses = allData[key].silences;
+      esses.filter(function (ess) {
+        var diff = ess[1] - ess[0];
+        if (diff >= 1) {
+          shortSilences.push(key, ess);
+        }
+      });
+    }
+  }
+};
+
+var filterConnectionsListByFewSilences = function (connectionList) {
+  return connectionList.filter(function (connection) {
+    var start = connection[0], end = connection[1];
+    if (allData[start].silences.length <= 1 || allData[end].silences.length <= 1)
+      return true;
+  });
+};
+var filterConnectionsListByManySilences = function (connectionList) {
+  return connectionList.filter(function (connection) {
+    var start = connection[0], end = connection[1];
+    if (allData[start].silences.length > 2 || allData[end].silences.length > 2)
+      return true;
+  });
+};
+var lastFiveWereShort = function (clipLengths) {
+  if (clipLengths.length < 5) return false;
+  var lastFive = clipLengths.slice(clipLengths.length - 5);
+  lastFive = lastFive.filter(function (a) {
+    if (a < config.segmentMaxTime) return true;
+  });
+  return lastFive.length == 5;
 }
 var getPath = function (word, allTheClips, edgeList) {
   var path = [], usedSegments = [], ordered = [], segment, possibleList = [], start = true, clip, wordsInSegment, wordsTimestamps, usedClips = [], usedWords = [], counter = 0;
-  
   // go down edgeList for the word until you have a connection
-  
+  var clipLengths;
   
   while (time < config.videoDuration) {
     if (start) {
@@ -530,7 +581,9 @@ var getPath = function (word, allTheClips, edgeList) {
       clip = segmentAndClip[0];
       segment = segmentAndClip[1];
       addUsedSegments(clip, startingSegments[clip], usedSegments);
-      path.push(['START', clip, startingSegments[clip]]);
+      nextPath = ['START', clip, startingSegments[clip]];
+      path.push(nextPath);
+      time = updateTime(time, nextPath, clipLengths);
       
       // segment = getWordsFromRange(clip, startingSegments[clip]);
       // console.log(segment);
@@ -539,6 +592,10 @@ var getPath = function (word, allTheClips, edgeList) {
       // console.log(segment);
       word = segment[0];
       start = false;
+    } else if (getRandomInt(0, 10) % 5 === 0) {
+      // pepper in a silence
+      var ss = shortSilences.pop(0);
+      path.push(['shortSilence', ss[0], ss[1]]);
     }
     // first pick a list of connections by that word
     possibleList = edgeList[word];
@@ -550,7 +607,11 @@ var getPath = function (word, allTheClips, edgeList) {
     
     
     possibleList = filterConnectionsListByUsedClips(possibleList, usedClips);
-    
+    if (lastFiveWereShort(clipLengths)) {
+      possibleList = filterConnectionsListByFewSilences(possibleList);
+    } else {
+      possibleList = filterConnectionsListByManySilences(possibleList);
+    }
     possibleList = translateConnectionsToSegments(possibleList, word, config.segmentMinTime);
     
     // possibleList = filterConnectionsSegmentsByUsedSegments(possibleList, usedSegments, word);
@@ -567,7 +628,7 @@ var getPath = function (word, allTheClips, edgeList) {
     nextPath = translatePickedConnectionSegmentToSilenceRange(connection, word);
     nextPath = drawRandomlyFromArray(nextPath);
     path = path.concat(nextPath);
-    time = updateTime(time, nextPath);
+    time = updateTime(time, nextPath, clipLengths);
     console.log(path, time);
     addUsedThings(connection, nextPath, usedSegments, usedClips, usedWords, word);
     console.log(usedWords);
