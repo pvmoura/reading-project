@@ -7,8 +7,9 @@ DIR = "/Users/readingspeaks/Dropbox/Exquisite_Corpse/short_samples/20160521_096_
 DIR = "/Users/readingspeaks/Dropbox/Exquisite_Corpse/short_samples/CONF-1_S003_S003_T002_1.wav"
 DIR = "/Users/readingspeaks/Dropbox/Exquisite_Corpse/short_samples/20160522_122_michael_levine.wav"
 DIR = "/Users/pedrovmoura/Dropbox/Exquisite_Corpse/short_samples/20160522_122_michael_levine.wav"
-
-def get_volumes(filename, threshold=None, fraction=4):
+DIR = "/Volumes/RS1/CLIPS/20170711-1_S020_T.wav"
+DIR = "/Volumes/RS1/CLIPS/20170709-1_S01_T.wav"
+def get_volumes(filename, threshold=None, fraction=2):
 	fraction, ls, length = int(fraction), [], None
 	with contextlib.closing(wave.open(filename, 'r')) as w:
 		framerate = w.getframerate()
@@ -20,7 +21,7 @@ def get_volumes(filename, threshold=None, fraction=4):
 			l = w.readframes(fr)
 	return map(lambda l: audioop.rms(l, 2), ls), threshold, fraction, length
 
-def get_silence_times(volumes, threshold=450, fraction=4.0, length=None):
+def get_silence_times(volumes, threshold=450, fraction=2.0, length=None):
 	on, start, silences = False, None, []
 	threshold, fraction = int(threshold), float(fraction)
 	for i, n in enumerate(volumes):
@@ -36,7 +37,7 @@ def get_silence_times(volumes, threshold=450, fraction=4.0, length=None):
 def determine_silence_threshold(volumes):
 	max_val, min_val = max(volumes), min(volumes)
 	diff = max_val - min_val
-	threshold = (diff * .1) + min_val
+	threshold = (diff * .2) + min_val
 	return threshold
 
 if __name__ == "__main__":
@@ -44,7 +45,6 @@ if __name__ == "__main__":
 		sys.stdout.flush()
 		given = raw_input().strip().split(' ')
 		if len(given) > 3 or len(given) <= 0:
-			print "Need at most 3 arguments"
 			continue
 		silence_args = list(get_volumes(*given))
 		if silence_args[1] is None:

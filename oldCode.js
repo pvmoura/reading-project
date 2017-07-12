@@ -12,26 +12,6 @@ files = files.filter( function (f) { return f.split(".")[1] === 'json' } );
 files = files.map( function (f) { return f.split(".")[0] } );
 
 
-var getStartingSegments = function () {
-  for (var key in allData) {
-    if (allData.hasOwnProperty(key)) {
-      var silences = allData[key].silences;
-      var totalTime = 0, last = 0;
-      var newSilence = [[0, 0]];
-      silences.forEach(function (s) {
-        if (totalTime < config.segmentMinTime)
-          newSilence.push(s)
-        totalTime += s[1] - last;
-        last = s[1];
-      });
-      ////(newSilence);
-      if (typeof startingSegments[key] === 'undefined')
-        startingSegments[key] = reduceToStartAndEndPoints(newSilence);
-    }
-  }
-
-};
-
 var addToUsedClips = function (clip) {
   usedClips.push(clip);
 };
