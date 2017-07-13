@@ -149,7 +149,7 @@ var processClip = function (filename, range, num) {
 };
 
 var makeVideo = function () {
-  child.spawnSync('ffmpeg', '-f concat -safe 0 -i concat_list.txt -c copy final_output.mov'.split(' '));
+  child.spawnSync('ffmpeg', '-f concat -safe 0 -i concat_list.txt -c copy final_output_' + getRandomInt(0, 10000) + '.mov'.split(' '));
 };
 
 var filterUndesirableWords = function (words, usedWords, halve) {
@@ -579,14 +579,6 @@ var getPath = function (word, allTheClips, edgeList) {
   while (time < config.videoDuration && keepGoing) {
     if (start) {
       console.log("IN START");
-      for (var i = 0; i < 5; i++) {
-        var randomSilence = getRandomInt(0, shortSilences.length - 1);
-        randomSilence = shortSilences.popByIndex(randomSilence);
-        if (usedSilences.indexOf(randomSilence[0])) {
-          usedSilences.push(randomSilence[0]);
-          path.push(['shortSilence'].concat(randomSilence));
-        }
-      }
       word = allTheWords.pop(0);
       var clips = filterAllClipsByUsed(allTheClips, usedClips);
       clip = drawRandomlyFromArray(clips);
@@ -717,6 +709,14 @@ var getPath = function (word, allTheClips, edgeList) {
     //   continue;
     // }
 
+  }
+  for (var i = 0; i < 5; i++) {
+    var randomSilence = getRandomInt(0, shortSilences.length - 1);
+    randomSilence = shortSilences.popByIndex(randomSilence);
+    if (usedSilences.indexOf(randomSilence[0])) {
+      usedSilences.push(randomSilence[0]);
+      path.push(['shortSilence'].concat(randomSilence));
+    }
   }
   return path;
 };
