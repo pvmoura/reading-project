@@ -149,7 +149,7 @@ var processClip = function (filename, range, num) {
 };
 
 var makeVideo = function () {
-  child.spawnSync('ffmpeg', '-f concat -safe 0 -i concat_list.txt -c copy final_output_' + getRandomInt(0, 10000) + '.mov'.split(' '));
+  child.spawnSync('ffmpeg', '-f concat -safe 0 -i concat_list.txt -c copy final_output.mov'.split(' '));
 };
 
 var filterUndesirableWords = function (words, usedWords, halve) {
