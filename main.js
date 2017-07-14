@@ -6,10 +6,6 @@ var watsonTranscriber = require('./transcriber.js');
 var child = require('child_process');
 var files = fs.readdirSync(config.rawDataDirectory);
 var shortSilenceFiles = fs.readdirSync(config.shortSilencesDirectory);
-var silences = child.execFile('./silences.py');
-// var wn = child.execFile('./wordnet_analysis.py');
-// files = files.filter(function(a) { return a.split('.')[1] === 'wav'; });
-// a function to 
 var allTheLengths = {};
 var processedFiles = 0;
 var processed = 0, numToProcess = 0;
@@ -54,63 +50,6 @@ var getAllTheWords = function (edgeList) {
   return words.map(function (w) { return w[0]; });
 }
 
-silences.stdout.on('data', function (data) {
-  var soundFile, identifier = data.filename;
-  data = JSON.parse(data.trim());
-  if (allData[data.filename] === 'undefined')
-    allData[data.filename] = {};
-  allData[data.filename]['silences'] = data.silences;
-  allTheLengths[data.filename] = data.fileLength;
-  processed++;
-  var fd = fs.openSync('silences.txt', 'a');
-  fs.writeSync(fd, data.filename + ":" + JSON.stringify(data.silences) + "\n");
-  fs.closeSync(fd);
-
-  if (processed === numToProcess) {
-    // populateGraph();
-    // edgeList = createEdgeList(graph);
-    // allTheWords = getAllTheWords(edgeList);
-    // // silences.kill();
-    // getStartingSegments();
-    // shortSilences.sort(function (a, b) {
-    //   var diffA = a[1][1] - a[1][0], diffB = b[1][1] - b[1][0];
-    //   if (diffA < diffB)
-    //     return 1;
-    //   else if (diffA > diffB)
-    //     return -1;
-    //   else
-    //     return 0;
-    // });
-    // console.log(shortSilences);
-    // // getEndingSegments();
-    // // writeUpWords("wordCounts");
-    // // ////(endingSegments);
-    // // wordCounts = {};
-    // // wordInFiles = {};
-    // // populateGraph();
-
-    // // for (var key in startingSegments) {
-    // //   if (startingSegments.hasOwnProperty(key)) {
-    // //     var segment = startingSegments[key];
-    // //     var words = getWordsFromRange(key, segment);
-    // //     var countedWords = countWords(words);
-    // //     countWordFiles(words, key);
-    // //     //////(wordInFiles);
-    // //   }
-    // // }
-    // // writeUpWords("startingWordCounts");
-    // // makeClipWithSilences();
-
-    // path = getPath("hello", allTheClips, edgeList);
-    // path.forEach(function (item, i) {
-    //   console.log(item);
-    //   processClip(item[1], item[2], i);
-    // });
-    // addSilencesToConcat(usedClips);
-    // makeVideo();
-
-  }
-});
 var addSilencesToConcat = function (usedClips) {
   shortSilenceFiles = shortSilenceFiles.filter(function (s) {
     return usedClips.indexOf(s.split('.')[0]) === -1;
@@ -121,9 +60,6 @@ var addSilencesToConcat = function (usedClips) {
       fs.writeSync(fd, "file '" + shortSilenceFiles.pop() + "'\n");
   }
 };
-silences.stderr.on('data', function (err) {
-  console.log(err);
-});
 
 var getAllLengths = function (clips) {
   clips.forEach(function (clip) {
@@ -170,7 +106,7 @@ var processClip = function (filename, range, num) {
   var fd = fs.openSync('concat_list.txt', 'a');
   var output = config.tempDirectory + 'output' + num + '.mov';
   var time = range[1] - range[0];
-  var command = '-i ' + config.videoFileDirectory + "/" + filename + ".mov" + ' -c:v prores -profile:v 1 -ss ' + convertTimeToTimeStamp(range[0]) + ' -t ' + convertTimeToTimeStamp(time) + ' ' + output;
+  var command = '-i ' + config.videoFileDirectory + filename + ".mov" + ' -c:v prores -profile:v 1 -ss ' + convertTimeToTimeStamp(range[0]) + ' -t ' + convertTimeToTimeStamp(time) + ' ' + output;
   console.log(command);
   var result = child.spawnSync('ffmpeg', command.split(' '));
   fs.writeSync(fd, "file '" + output + "'\n");
@@ -178,8 +114,10 @@ var processClip = function (filename, range, num) {
 };
 
 var makeVideo = function () {
-  var command = '-f concat -safe 0 -i concat_list.txt -c copy ' + config.outputDirectory + 'output_' + getRandomInt(0, 10000) + '.mov';
-  child.spawnSync('ffmpeg', command.split(' '));
+  var outputFilename = config.outputDirectory + 'output_' + getRandomInt(0, 10000) + '.mov';
+  var command = '-f concat -safe 0 -i concat_list.txt -c copy ' + outputFilename;
+  child.spawnSync('ffpeg', command.split(' '));
+  return outputFilename;
 };
 
 var filterUndesirableWords = function (words, usedWords, halve) {
@@ -809,36 +747,59 @@ files.forEach(function (filename) {
   }
 
 });
-    populateGraph();
-    edgeList = createEdgeList(graph);
-    allTheWords = getAllTheWords(edgeList);
-    // silences.kill();
-    getStartingSegments();
-    // getEndingSegments();
-    // writeUpWords("wordCounts");
-    // ////(endingSegments);
-    // wordCounts = {};
-    // wordInFiles = {};
-    // populateGraph();
-
-    // for (var key in startingSegments) {
-    //   if (startingSegments.hasOwnProperty(key)) {
-    //     var segment = startingSegments[key];
-    //     var words = getWordsFromRange(key, segment);
-    //     var countedWords = countWords(words);
-    //     countWordFiles(words, key);
-    //     //////(wordInFiles);
-    //   }
-    // }
-    // writeUpWords("startingWordCounts");
-    // makeClipWithSilences();
-
-    path = getPath("hello", allTheClips, edgeList);
-    path.forEach(function (item, i) {
-      console.log(item);
-      // processClip(item[1], item[2], i);
+var cleanup = function (finalOutput) {
+  if (fs.existsSync(finalOutput)) {
+    var tempVids = fs.readdirSync(config.tempDirectory);
+    tempVids.forEach(function(v) {
+      fs.unlinkSync(config.tempDirectory + v);
     });
+    try {
+      fs.unlinkSync('./concat_list.txt'); 
+    } catch (err) {
+      console.log("concat file doesn't exist");
+    }
+  console.log()
+  } else {
+    console.log("\x1b[31m\x1b[40m", "Not deleting temp files because the final video wasn't made. Please manually concatenate the videos.", "\x1b[0m");
+  }
+  // process.kill(process.pid);
+};
+try {
+  fs.unlinkSync('./concat_list.txt');
+} catch (err) {
+  console.log(err);
+}
+populateGraph();
+edgeList = createEdgeList(graph);
+allTheWords = getAllTheWords(edgeList);
+// silences.kill();
+getStartingSegments();
+// getEndingSegments();
+// writeUpWords("wordCounts");
+// ////(endingSegments);
+// wordCounts = {};
+// wordInFiles = {};
+// populateGraph();
 
+// for (var key in startingSegments) {
+//   if (startingSegments.hasOwnProperty(key)) {
+//     var segment = startingSegments[key];
+//     var words = getWordsFromRange(key, segment);
+//     var countedWords = countWords(words);
+//     countWordFiles(words, key);
+//     //////(wordInFiles);
+//   }
+// }
+// writeUpWords("startingWordCounts");
+// makeClipWithSilences();
+
+path = getPath("hello", allTheClips, edgeList);
+path.forEach(function (item, i) {
+  console.log(item);
+  processClip(item[1], item[2], i);
+});
+var finalOutput = makeVideo();
+cleanup(finalOutput);
   // var fd = fs.openSync('graph.txt', 'w');
   // fs.writeSync(fd, JSON.stringify(graph));
   // fs.closeSync(fd);
