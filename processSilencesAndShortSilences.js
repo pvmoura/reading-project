@@ -24,11 +24,11 @@ var writeToJSObj = function (dataToWrite, JSObj) {
 	return JSObj;
 };
 
-var getShortSilences = function (silences, maxSilenceThreshold) {
+var getShortSilences = function (silences, maxSilenceThreshold, minSilenceThreshold) {
 	if (typeof silences === 'undefined') return [];
 	return silences.filter(function (ess) {
     	var diff = ess[1] - ess[0];
-    	return diff <= maxSilenceThreshold;
+    	return diff <= maxSilenceThreshold && diff >= minSilenceThreshold;
     });
 };
 
@@ -36,7 +36,8 @@ silences.stdin.write(fullFilename + '\n');
 silences.stdout.on('data', function (data) {
 	var JSObj, JSObjLoc = config.rawDataDirectory + identifier + '.json', fd;
 	data = JSON.parse(data.trim());
-	data['shortSilences'] = getShortSilences(data.silences, config.shortSilenceMax);
+	data['shortSilences'] = getShortSilences(data.silences, config.shortSilenceMax, config.shortSilenceMin);
+	console.log(data.shortSilences);
 	if (fs.existsSync(JSObjLoc)) {
 		JSObj = JSON.parse(fs.readFileSync(JSObjLoc, 'utf-8'));
 	} else {

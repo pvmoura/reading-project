@@ -5,6 +5,7 @@ mostCommonWords = mostCommonWords.map( function (word) { return word.toLowerCase
 var watsonTranscriber = require('./transcriber.js');
 var child = require('child_process');
 var files = fs.readdirSync(config.transcriptsDirectory);
+var shortSilenceFiles = fs.readdirSync(config.shortSilencesDirectory);
 var silences = child.execFile('./silences.py');
 // var wn = child.execFile('./wordnet_analysis.py');
 // files = files.filter(function(a) { return a.split('.')[1] === 'wav'; });
@@ -88,10 +89,21 @@ silences.stdout.on('data', function (data) {
       console.log(item);
       processClip(item[1], item[2], i);
     });
+    addSilencesToConcat(usedClips);
     makeVideo();
 
   }
 });
+var addSilencesToConcat = function (usedClips) {
+  shortSilenceFiles = shortSilenceFiles.filter(function (s) {
+    return usedClips.indexOf(s.split('.')[0]) === -1;
+  });
+  var fd = fs.openSync('concat_list.txt', 'a');
+  for (var i = 0; i < 10; i++) {
+    if (shortSilences.length > 0)
+      fs.writeSync(fd, "file '" + shortSilenceFiles.pop() + "'\n");
+  }
+};
 silences.stderr.on('data', function (err) {
   console.log(err);
 });
@@ -141,7 +153,7 @@ var processClip = function (filename, range, num) {
   var fd = fs.openSync('concat_list.txt', 'a');
   var output = config.tempDirectory + 'output' + num + '.mov';
   var time = range[1] - range[0];
-  var command = '-i ' + config.videoFileDirectory + "/" + filename + ".mov" + ' -c:v prores -profile:v 3 -strict -2 -ss ' + convertTimeToTimeStamp(range[0]) + ' -t ' + convertTimeToTimeStamp(time) + ' ' + output;
+  var command = '-i ' + config.videoFileDirectory + "/" + filename + ".mov" + ' -c:v prores -profile:v 1 -ss ' + convertTimeToTimeStamp(range[0]) + ' -t ' + convertTimeToTimeStamp(time) + ' ' + output;
   console.log(command);
   var result = child.spawnSync('ffmpeg', command.split(' '));
   fs.writeSync(fd, "file '" + output + "'\n");
@@ -149,7 +161,8 @@ var processClip = function (filename, range, num) {
 };
 
 var makeVideo = function () {
-  child.spawnSync('ffmpeg', '-f concat -safe 0 -i concat_list.txt -c copy final_output.mov'.split(' '));
+  var command = '-f concat -safe 0 -i concat_list.txt -c copy ' + config.outputDirectory + 'output_' + getRandomInt(0, 10000) + '.mov';
+  child.spawnSync('ffmpeg', command.split(' '));
 };
 
 var filterUndesirableWords = function (words, usedWords, halve) {
@@ -564,15 +577,15 @@ var filterConnectionsListByManySilences = function (connectionList) {
   });
 };
 var lastFiveWereShort = function (clipLengths) {
-  if (clipLengths.length < 5) return false;
-  var lastFive = clipLengths.slice(clipLengths.length - 6);
+  if (clipLengths.length < 8) return false;
+  var lastFive = clipLengths.slice(clipLengths.length - 9);
   lastFive = lastFive.filter(function (a) {
     if (a < config.segmentMaxTime) return true;
   });
-  return lastFive.length >= 5;
+  return lastFive.length >= 8;
 }
 var getPath = function (word, allTheClips, edgeList) {
-  var path = [], usedSegments = [], ordered = [], segment, possibleList = [], start = true, clip, wordsInSegment, wordsTimestamps, usedClips = [], usedWords = [], counter = 0;
+  var path = [], usedSegments = [], ordered = [], segment, possibleList = [], start = true, clip, wordsInSegment, wordsTimestamps, usedWords = [], counter = 0;
   // go down edgeList for the word until you have a connection
   var clipLengths = [], usedSilences = [], keepGoing = true;
   
@@ -710,14 +723,7 @@ var getPath = function (word, allTheClips, edgeList) {
     // }
 
   }
-  for (var i = 0; i < 5; i++) {
-    var randomSilence = getRandomInt(0, shortSilences.length - 1);
-    randomSilence = shortSilences.popByIndex(randomSilence);
-    if (usedSilences.indexOf(randomSilence[0])) {
-      usedSilences.push(randomSilence[0]);
-      path.push(['shortSilence'].concat(randomSilence));
-    }
-  }
+
   return path;
 };
 var createEdgeList = function (graph) {

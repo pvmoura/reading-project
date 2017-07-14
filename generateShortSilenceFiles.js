@@ -29,25 +29,29 @@ var convertTimeToTimeStamp = function (time) {
 var processShortSilence = function (filename, range) {
   var output = config.shortSilencesDirectory + filename + '.mov';
   var time = range[1] - range[0];
-  var command = '-i ' + config.videoFileDirectory + filename + ".mov" + ' -c:v prores -profile:v 3 -strict -2 -ss ' + convertTimeToTimeStamp(range[0]) + ' -t ' + convertTimeToTimeStamp(time) + ' ' + output;
+  var command = '-i ' + config.videoFileDirectory + filename + ".mov" + ' -c:v prores -profile:v 1 -ss ' + convertTimeToTimeStamp(range[0]) + ' -t ' + convertTimeToTimeStamp(time) + ' ' + output;
   console.log(command);
-  var result = child.spawnSync('ffmpeg', command.split(' '));
+  var result = child.spawn('ffmpeg', command.split(' '));
   return result;
 };
 
 files = fs.readdirSync(rawDataDir);
-
 files.forEach(function (filename) {
-	var fileData = JSON.parse(fs.readFileSync(config.rawDataDirectory + filename));
-	var identifier = filename.split('.')[0];
-	if (typeof fileData.shortSilences === 'undefined') {
-		console.log("NO SHORT SILENCES RECORDED FOR FILE:", filename);
-		return;
+	var split_file = filename.split('.');
+	if (split_file[1] === 'json') {
+		console.log(filename, identifier);
+		var fileData = JSON.parse(fs.readFileSync(config.rawDataDirectory + filename));
+		var identifier = filename.split('.')[0];
+
+		if (typeof fileData.shortSilences === 'undefined') {
+			console.log("NO SHORT SILENCES RECORDED FOR FILE:", filename);
+			return;
+		}
+		silence = drawRandomlyFromArray(fileData.shortSilences);
+		if (typeof silence === 'undefined') {
+			console.log("NO SHORT SILENCES IN FILE:", filename);
+			return;
+		}
+		processShortSilence(identifier, silence);
 	}
-	silence = drawRandomlyFromArray(fileData.shortSilences);
-	if (typeof silence === 'undefined') {
-		console.log("NO SHORT SILENCES IN FILE:", filename);
-		return;
-	}
-	processShortSilence(identifier, silence);
 });
