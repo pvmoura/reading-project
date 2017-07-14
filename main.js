@@ -4,7 +4,7 @@ var mostCommonWords = JSON.parse(fs.readFileSync('most_common_words.json', 'utf-
 mostCommonWords = mostCommonWords.map( function (word) { return word.toLowerCase(); } );
 var watsonTranscriber = require('./transcriber.js');
 var child = require('child_process');
-var files = fs.readdirSync(config.transcriptsDirectory);
+var files = fs.readdirSync(config.rawDataDirectory);
 var shortSilenceFiles = fs.readdirSync(config.shortSilencesDirectory);
 var silences = child.execFile('./silences.py');
 // var wn = child.execFile('./wordnet_analysis.py');
@@ -36,6 +36,24 @@ var getRandomInt = function (min, max) {
     return Math.floor(Math.random() * (max - min + 1)) + min;
 };
 
+var getAllTheWords = function (edgeList) {
+  words = [];
+  for (var key in edgeList) {
+    if (edgeList.hasOwnProperty(key)) {
+      words.push([key, edgeList[key]]);
+    }
+  }
+  words.sort(function (a, b) {
+    if (a[1].length < b[1].length)
+      return 1;
+    else if (a[1].length > b[1].length)
+      return -1;
+    else
+      return 0;
+  });
+  return words.map(function (w) { return w[0]; });
+}
+
 silences.stdout.on('data', function (data) {
   var soundFile, identifier = data.filename;
   data = JSON.parse(data.trim());
@@ -49,48 +67,47 @@ silences.stdout.on('data', function (data) {
   fs.closeSync(fd);
 
   if (processed === numToProcess) {
-    populateGraph();
-    edgeList = createEdgeList(graph);
-    allTheWords = getAllTheWords(edgeList);
-    getShortSilences();
-    // silences.kill();
-    getStartingSegments();
-    shortSilences.sort(function (a, b) {
-      var diffA = a[1][1] - a[1][0], diffB = b[1][1] - b[1][0];
-      if (diffA < diffB)
-        return 1;
-      else if (diffA > diffB)
-        return -1;
-      else
-        return 0;
-    });
-    console.log(shortSilences);
-    // getEndingSegments();
-    // writeUpWords("wordCounts");
-    // ////(endingSegments);
-    // wordCounts = {};
-    // wordInFiles = {};
     // populateGraph();
+    // edgeList = createEdgeList(graph);
+    // allTheWords = getAllTheWords(edgeList);
+    // // silences.kill();
+    // getStartingSegments();
+    // shortSilences.sort(function (a, b) {
+    //   var diffA = a[1][1] - a[1][0], diffB = b[1][1] - b[1][0];
+    //   if (diffA < diffB)
+    //     return 1;
+    //   else if (diffA > diffB)
+    //     return -1;
+    //   else
+    //     return 0;
+    // });
+    // console.log(shortSilences);
+    // // getEndingSegments();
+    // // writeUpWords("wordCounts");
+    // // ////(endingSegments);
+    // // wordCounts = {};
+    // // wordInFiles = {};
+    // // populateGraph();
 
-    // for (var key in startingSegments) {
-    //   if (startingSegments.hasOwnProperty(key)) {
-    //     var segment = startingSegments[key];
-    //     var words = getWordsFromRange(key, segment);
-    //     var countedWords = countWords(words);
-    //     countWordFiles(words, key);
-    //     //////(wordInFiles);
-    //   }
-    // }
-    // writeUpWords("startingWordCounts");
-    // makeClipWithSilences();
+    // // for (var key in startingSegments) {
+    // //   if (startingSegments.hasOwnProperty(key)) {
+    // //     var segment = startingSegments[key];
+    // //     var words = getWordsFromRange(key, segment);
+    // //     var countedWords = countWords(words);
+    // //     countWordFiles(words, key);
+    // //     //////(wordInFiles);
+    // //   }
+    // // }
+    // // writeUpWords("startingWordCounts");
+    // // makeClipWithSilences();
 
-    path = getPath("hello", allTheClips, edgeList);
-    path.forEach(function (item, i) {
-      console.log(item);
-      processClip(item[1], item[2], i);
-    });
-    addSilencesToConcat(usedClips);
-    makeVideo();
+    // path = getPath("hello", allTheClips, edgeList);
+    // path.forEach(function (item, i) {
+    //   console.log(item);
+    //   processClip(item[1], item[2], i);
+    // });
+    // addSilencesToConcat(usedClips);
+    // makeVideo();
 
   }
 });
@@ -572,7 +589,9 @@ var filterConnectionsListByFewSilences = function (connectionList) {
 var filterConnectionsListByManySilences = function (connectionList) {
   return connectionList.filter(function (connection) {
     var start = connection[0], end = connection[1];
-    if (allData[start].silences.length > 2 || allData[end].silences.length > 2)
+    // console.log(allData[start].silences, allData[end].silences);
+    // process.kill(process.pid);
+    if (allData[start].silences.length > 10 && allData[end].silences.length > 10)
       return true;
   });
 };
@@ -634,11 +653,15 @@ var getPath = function (word, allTheClips, edgeList) {
     
     
     possibleList = filterConnectionsListByUsedClips(possibleList, usedClips);
-    if (lastFiveWereShort(clipLengths)) {
+    // if (lastFiveWereShort(clipLengths)) {
+    //   possibleList = filterConnectionsListByFewSilences(possibleList);
+    // } else {
+    if (path.length === 7) {
       possibleList = filterConnectionsListByFewSilences(possibleList);
     } else {
       possibleList = filterConnectionsListByManySilences(possibleList);
     }
+    // }
     possibleList = translateConnectionsToSegments(possibleList, word, config.segmentMinTime);
     
     // possibleList = filterConnectionsSegmentsByUsedSegments(possibleList, usedSegments, word);
@@ -767,34 +790,55 @@ files.forEach(function (filename) {
   var soundFile, rankedSoundFile = [], identifier = filename.split('.')[0];
   if (filename.split('.')[1] === 'json') {
     numToProcess++;
-    silences.stdin.write(config.waveFileDirectory + identifier + '.wav\n');
-    soundFile = JSON.parse(fs.readFileSync(config.transcriptsDirectory + "/" + identifier + '.json', 'utf-8'));
+    // silences.stdin.write(config.waveFileDirectory + identifier + '.wav\n');
+    try {
+      soundFile = JSON.parse(fs.readFileSync(config.transcriptsDirectory + identifier + '.json'), 'utf-8');
+      var dataFile = JSON.parse(fs.readFileSync(config.rawDataDirectory + filename), 'utf-8');
 
-    if (typeof allData[identifier] === 'undefined')
-      allData[identifier] = {};
+    // console.log(allData, config.transcriptsDirectory, identifier, soundFile, dataFile);
+          if (typeof allData[identifier] === 'undefined')
+        allData[identifier] = dataFile;
     allData[identifier]['rawWatsonData'] = soundFile;
     allData[identifier]['combinedWatson'] = combineTranscript(soundFile);
     allTheClips.push(identifier);
+    allTheLengths[dataFile.filename] = dataFile.fileLength;
+    } catch (e) {
+      console.log(e);
+    }
+
   }
 
 });
-var getAllTheWords = function (edgeList) {
-  words = [];
-  for (var key in edgeList) {
-    if (edgeList.hasOwnProperty(key)) {
-      words.push([key, edgeList[key]]);
-    }
-  }
-  words.sort(function (a, b) {
-    if (a[1].length < b[1].length)
-      return 1;
-    else if (a[1].length > b[1].length)
-      return -1;
-    else
-      return 0;
-  });
-  return words.map(function (w) { return w[0]; });
-}
+    populateGraph();
+    edgeList = createEdgeList(graph);
+    allTheWords = getAllTheWords(edgeList);
+    // silences.kill();
+    getStartingSegments();
+    // getEndingSegments();
+    // writeUpWords("wordCounts");
+    // ////(endingSegments);
+    // wordCounts = {};
+    // wordInFiles = {};
+    // populateGraph();
+
+    // for (var key in startingSegments) {
+    //   if (startingSegments.hasOwnProperty(key)) {
+    //     var segment = startingSegments[key];
+    //     var words = getWordsFromRange(key, segment);
+    //     var countedWords = countWords(words);
+    //     countWordFiles(words, key);
+    //     //////(wordInFiles);
+    //   }
+    // }
+    // writeUpWords("startingWordCounts");
+    // makeClipWithSilences();
+
+    path = getPath("hello", allTheClips, edgeList);
+    path.forEach(function (item, i) {
+      console.log(item);
+      // processClip(item[1], item[2], i);
+    });
+
   // var fd = fs.openSync('graph.txt', 'w');
   // fs.writeSync(fd, JSON.stringify(graph));
   // fs.closeSync(fd);
