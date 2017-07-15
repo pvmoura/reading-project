@@ -385,7 +385,7 @@ var filterConnectionsListByTodaysClips = function (possibleList, favoredClips) {
     var start = connection[0], end = connection[1];
     // //console.log(favoredClips, favoredClips.indexOf(start), start, favoredClips.indexOf(end), end);
     // process.kill(process.pid);
-    return favoredClips.indexOf(start) !== -1 && favoredClips.indexOf(end) !== -1;
+    return favoredClips.indexOf(start) !== -1 || favoredClips.indexOf(end) !== -1;
   });
 };
 
@@ -470,6 +470,16 @@ var getStartingSegments = function () {
     }
   }
 
+};
+
+var drawFromTodaysClips = function (possibleList, favoredClips, usedClips) {
+  var temp = possibleList.filter(function (connection) {
+    var start = connection[0], end = connection[1];
+    if (usedClips.indexOf(start) !== -1 || usedClips.indexOf(end) !== -1)
+      return false;
+    return favoredClips.indexOf(start) !== -1 || favoredClips.indexOf(end) !== -1;
+  });
+  return drawRandomlyFromArray(temp);
 };
 
 var filterAllClipsByUsed = function(allTheClips, usedClips) {
@@ -584,7 +594,7 @@ var filterConnectionsListByManySilences = function (connectionList) {
     var start = connection[0], end = connection[1];
     // //console.log(allData[start].silences, allData[end].silences);
     // process.kill(process.pid);
-    if (allData[start].silences.length > 10 && allData[end].silences.length > 10)
+    if (allData[start].silences.length > 3 && allData[end].silences.length > 3)
       return true;
   });
 };
@@ -646,11 +656,13 @@ var getPath = function (word, allTheClips, edgeList) {
       continue;
     }
     
+
+    //console.log(possibleList);
+    possibleList = filterConnectionsListByUsedClips(possibleList, usedClips);
+
     if (favor) {
       possibleList = filterConnectionsListByTodaysClips(possibleList, favoredClips);
     }
-    //console.log(possibleList);
-    possibleList = filterConnectionsListByUsedClips(possibleList, usedClips);
     // if (lastFiveWereShort(clipLengths)) {
     //   possibleList = filterConnectionsListByFewSilences(possibleList);
     // } else {
@@ -683,8 +695,14 @@ var getPath = function (word, allTheClips, edgeList) {
       possibleList = futureConnections;
     }
     // possibleList = filterOutErrors(possibleList);
-    connection = drawRandomlyFromArray(possibleList);
+    // connection = drawRandomlyFromArray(possibleList);
+    connection = drawFromTodaysClips(possibleList, favoredClips, usedClips);
+    
+    if (!connection) {
+      connection = drawRandomlyFromArray(possibleList);
+    }
     connection = pickRandomConnectionSegment(connection, word);
+
     // console.log(connection);
     if (config.videoDuration - time <= 40) {
       nextPath = translatePickedConnectionSegmentToSilenceRange(connection, word, true);
@@ -842,7 +860,7 @@ populateGraph();
 edgeList = createEdgeList(graph);
 allTheWords = getAllTheWords(edgeList);
 getFavoredClips();
-// console.log(favoredClips);
+console.log(favoredClips);
 // silences.kill();
 getStartingSegments();
 // getEndingSegments();
@@ -871,7 +889,6 @@ path.forEach(function (item, i) {
   processClip(item[1], item[2], i);
 });
 var finalOutput = makeVideo();
-usedClips = [];
 makeSilencesOutro(usedClips);
 var outroOutput = makeSilencesOutroClip();
 // cleanup(finalOutput, outroOutput);
