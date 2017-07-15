@@ -9,7 +9,7 @@ DIR = "/Users/readingspeaks/Dropbox/Exquisite_Corpse/short_samples/20160522_122_
 DIR = "/Users/pedrovmoura/Dropbox/Exquisite_Corpse/short_samples/20160522_122_michael_levine.wav"
 DIR = "/Volumes/RS1/CLIPS/20170711-1_S020_T.wav"
 DIR = "/Volumes/RS1/CLIPS/20170709-1_S01_T.wav"
-def get_volumes(filename, threshold=None, fraction=2):
+def get_volumes(filename, threshold=None, fraction=100):
 	fraction, ls, length = int(fraction), [], None
 	with contextlib.closing(wave.open(filename, 'r')) as w:
 		framerate = w.getframerate()
@@ -21,23 +21,52 @@ def get_volumes(filename, threshold=None, fraction=2):
 			l = w.readframes(fr)
 	return map(lambda l: audioop.rms(l, 2), ls), threshold, fraction, length
 
-def get_silence_times(volumes, threshold=450, fraction=2.0, length=None):
-	on, start, silences = False, None, []
+def get_silence_times(volumes, threshold=450, fraction=100.0, length=None):
+	on, start, silences, n_counter = False, None, [], 0
 	threshold, fraction = int(threshold), float(fraction)
+	print volumes, threshold
 	for i, n in enumerate(volumes):
 		i = float(i)
+		
 		if n < threshold and not on and start is None:
 			on = True
 			start = i / fraction
 		elif on and start is not None and n > threshold:
+			#n_counter += 1
+			#if n_counter >= 5:
 			silences.append([start, i / fraction])
-			on, start = False, None
+			on, start, n_counter = False, None, 0
+		#elif on and start is not None and n < threshold:
+			#n_counter = 0
+		print n - threshold, i /fraction, n_counter
 	return silences, length
+
+def combine_silences(silences, noise_tolerance=0.03):
+	import pdb
+	combined_silences, previous_start, previous_end = [], None, None
+	for current_start, current_end in silences:
+		pdb.set_trace()
+		if previous_end is None:
+			previous_end = current_end
+		elif current_start - previous_end < noise_tolerance:
+			combined_silences.append([previous_start, current_end])
+		elif:
+			combined_silences.append([current_start, current_end])
+
+		if len(combined_silences) > 0:
+			previous_start, previous_end = combined_silences[-1]
+		else:
+			previous_start, previous_end = current_start, current_end
+
+	combined_silences
+
+	return combined_silences
+
 
 def determine_silence_threshold(volumes):
 	max_val, min_val = max(volumes), min(volumes)
 	diff = max_val - min_val
-	threshold = (diff * .2) + min_val
+	threshold = (diff * .4) + min_val
 	return threshold
 
 if __name__ == "__main__":
@@ -50,6 +79,8 @@ if __name__ == "__main__":
 		if silence_args[1] is None:
 			silence_args[1] = determine_silence_threshold(silence_args[0])
 		silences, length = get_silence_times(*silence_args)
+		print silences
+		silences = combine_silences(silences)
 		filename = given[0].split('/')[-1]
 		output = {
 			'filename': filename.replace('Leveled-_', '').split('.')[0],
