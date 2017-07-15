@@ -5,6 +5,7 @@ var silences = child.execFile('./silences.py');
 var identifier;
 var filename = process.argv[2];
 var fullFilename = config.waveFileDirectory + filename;
+console.log(fullFilename, "IN PROCESS");
 var PID = process.pid;
 if (typeof filename === 'undefined' || filename.split('.')[1] !== 'wav') {
 	console.log("Bad Filename -- either you didn't give me one or it wasn't a WAV file");

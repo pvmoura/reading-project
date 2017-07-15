@@ -43,10 +43,44 @@ def get_silence_times(volumes, threshold=450, fraction=100.0, length=None):
 
 def combine_silences(silences, noise_tolerance=0.03):
 	import pdb
+	def get_all_indices(haystack, needle, cmp=lambda x, y: x == y):
+		return [i for i, x in enumerate(haystack) if cmp(x, needle)]
+
+	def find_repeats(numbers):
+		return set([n for n in numbers if len(get_all_indices(numbers, n)) > 1])
+
+	def pull_out_starts(temp_silences):
+		return map(lambda s: s[0], temp_silences)
+
+	def pull_out_ends(temp_silences):
+		return map(lambda s: s[1], temp_silences)
+
+	def find_occurrence_index(temp_silences, needle, index=0):
+		indices = get_all_indices(temp_silences, needle, lambda x, y: x[0] == y)
+		try: return indices[index]
+		except ValueError: return None
+
+	def is_start_in_array(array, start):
+		return len(filter(lambda x: x[0] == start, array)) > 0
+
+	def combine_multiples(temp_silences):
+		combined = []
+		starts, ends = pull_out_starts(temp_silences), pull_out_ends(temp_silences)
+		repeated_starts = find_repeats(starts)
+		for repeated_start in repeated_starts:
+			first_index = find_occurrence_index(temp_silences, repeated_start, 0)
+			last_index = find_occurrence_index(temp_silences, repeated_start, -1)
+			combined.append([temp_silences[first_index][0], temp_silences[last_index][1]])
+		for silence in temp_silences:
+			#import pdb; pdb.set_trace()
+			if not is_start_in_array(combined, silence[0]):
+				combined.append(silence)
+		return combined
+	
 	temp_silences, combined_silences, previous_start, previous_end, length = [], [], None, None, len(silences)
+	skipped_end = None
 	for i, silence in enumerate(silences):
 		current_start, current_end = silence
-		#pdb.set_trace()
 		if previous_end is None:
 			previous_end = current_end
 			temp_silences.append([current_start, current_end])
@@ -59,18 +93,7 @@ def combine_silences(silences, noise_tolerance=0.03):
 			previous_start, previous_end = temp_silences[-1]
 		else:
 			previous_start, previous_end = current_start, current_end
-	# pdb.set_trace()
-	previous_start = None
-	for current_start, current_end in temp_silences:
-		if previous_start is None:
-			previous_start = current_start
-		elif previous_start == current_start:
-			continue
-		else:
-			previous_start = current_start
-		combined_silences.append([previous_start, current_end])
-	print temp_silences, "TEMP SILENCES"
-	return combined_silences
+	return sorted(combine_multiples(temp_silences), key=lambda e: e[0])
 
 
 def determine_silence_threshold(volumes):
@@ -91,6 +114,8 @@ if __name__ == "__main__":
 		silences, length = get_silence_times(*silence_args)
 		print silences
 		silences = combine_silences(silences)
+		silences = filter(lambda x: x[1] - x[0] > 0.25, silences)
+		print len(silences)
 		filename = given[0].split('/')[-1]
 		output = {
 			'filename': filename.replace('Leveled-_', '').split('.')[0],

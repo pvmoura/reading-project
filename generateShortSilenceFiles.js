@@ -3,6 +3,7 @@ var config = JSON.parse(fs.readFileSync('config.json', 'utf8'));
 var child = require('child_process');
 var rawDataDir = config.rawDataDirectory;
 var files = [];
+var filter = process.argv[2];
 if (typeof rawDataDir === 'undefined') {
 	console.log("Please set the raw data directory in the config file");
 	process.kill(process.pid);
@@ -38,7 +39,7 @@ var processShortSilence = function (filename, range) {
 files = fs.readdirSync(rawDataDir);
 files.forEach(function (filename) {
 	var split_file = filename.split('.');
-	if (split_file[1] === 'json') {
+	if (split_file[1] === 'json' && split_file[0].indexOf(filter) !== -1) {
 		console.log(filename, identifier);
 		var fileData = JSON.parse(fs.readFileSync(config.rawDataDirectory + filename));
 		var identifier = filename.split('.')[0];
