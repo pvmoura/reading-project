@@ -68,8 +68,14 @@ var makeSilencesOutro = function (usedClips) {
     var identifier = s.split('.')[0];
     return usedClips.indexOf(identifier) === -1 && favoredClips.indexOf(identifier) !== -1;
   });
-  var total = unUsedPeople.length;
   var fd = fs.openSync('concat_silences.txt', 'w');
+  favoredClips.forEach(function(f) {
+    fs.writeSync(fd, "file '" + config.shortSilencesDirectory + f + "'\n");
+  });
+  fs.closeSync(fd);
+  return;
+  var total = unUsedPeople.length;
+  
   for (var i = 0, len = unUsedPeople.length; i < len; i++) {
     fs.writeSync(fd, "file '" + config.shortSilencesDirectory + unUsedPeople[i] + "'\n");
   }
@@ -836,6 +842,7 @@ populateGraph();
 edgeList = createEdgeList(graph);
 allTheWords = getAllTheWords(edgeList);
 getFavoredClips();
+// console.log(favoredClips);
 // silences.kill();
 getStartingSegments();
 // getEndingSegments();
@@ -864,9 +871,10 @@ path.forEach(function (item, i) {
   processClip(item[1], item[2], i);
 });
 var finalOutput = makeVideo();
+usedClips = [];
 makeSilencesOutro(usedClips);
 var outroOutput = makeSilencesOutroClip();
-cleanup(finalOutput, outroOutput);
+// cleanup(finalOutput, outroOutput);
   // var fd = fs.openSync('graph.txt', 'w');
   // fs.writeSync(fd, JSON.stringify(graph));
   // fs.closeSync(fd);
