@@ -43,23 +43,33 @@ def get_silence_times(volumes, threshold=450, fraction=100.0, length=None):
 
 def combine_silences(silences, noise_tolerance=0.03):
 	import pdb
-	combined_silences, previous_start, previous_end = [], None, None
-	for current_start, current_end in silences:
-		pdb.set_trace()
+	temp_silences, combined_silences, previous_start, previous_end, length = [], [], None, None, len(silences)
+	for i, silence in enumerate(silences):
+		current_start, current_end = silence
+		#pdb.set_trace()
 		if previous_end is None:
 			previous_end = current_end
-		elif current_start - previous_end < noise_tolerance:
-			combined_silences.append([previous_start, current_end])
-		elif:
-			combined_silences.append([current_start, current_end])
+			temp_silences.append([current_start, current_end])
+		elif round(current_start - previous_end, 2) <= noise_tolerance:
+			temp_silences.append([previous_start, current_end])
+		else:
+			temp_silences.append([current_start, current_end])
 
-		if len(combined_silences) > 0:
-			previous_start, previous_end = combined_silences[-1]
+		if len(temp_silences) > 0:
+			previous_start, previous_end = temp_silences[-1]
 		else:
 			previous_start, previous_end = current_start, current_end
-
-	combined_silences
-
+	# pdb.set_trace()
+	previous_start = None
+	for current_start, current_end in temp_silences:
+		if previous_start is None:
+			previous_start = current_start
+		elif previous_start == current_start:
+			continue
+		else:
+			previous_start = current_start
+		combined_silences.append([previous_start, current_end])
+	print temp_silences, "TEMP SILENCES"
 	return combined_silences
 
 
