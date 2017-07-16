@@ -36,6 +36,45 @@ var getRandomInt = function (min, max) {
     return Math.floor(Math.random() * (max - min + 1)) + min;
 };
 
+var getFavoredWords = function (edgeList) {
+  var words = [], connectionList = [];
+  var start, end;
+  for (var key in edgeList) {
+    if (edgeList.hasOwnProperty(key)) {
+      connectionList = edgeList[key];
+      for (var i = 0; i < connectionList.length; i++) {
+        if (connectionList[i].length != 0) {
+          start = connectionList[i][0];
+          end = connectionList[i][1];
+        if (favoredClips.indexOf(start) !== -1 || favoredClips.indexOf(end) !== -1)
+          words.push([key, edgeList[key]]);
+        }
+      }
+    }
+  }
+  words = words.filter(function (w) {
+    return mostCommonWords.indexOf(w) === -1 && w.indexOf("\'") === -1 && w != '%hesitation';
+  });
+  var uniques = []
+  words.sort(function(a, b) {
+    if (a[1].length < b[1].length)
+      return 1;
+    else if (a[1].length > b[1].length)
+      return -1;
+    else
+      return 0;
+  });
+  
+  words = words.map(function (w) {
+    return w[0];
+  });
+  words.forEach(function (w) {
+    if (uniques.indexOf(w) === -1)
+      uniques.push(w);
+  });
+  return uniques;
+};
+
 var getAllTheWords = function (edgeList) {
   words = [];
   for (var key in edgeList) {
@@ -64,6 +103,7 @@ var getFavoredClips = function () {
   });
 }
 var makeSilencesOutro = function (usedClips) {
+  var total = 0;
   var unUsedPeople = shortSilenceFiles.filter(function (s) {
     var identifier = s.split('.')[0];
     return usedClips.indexOf(identifier) === -1 && favoredClips.indexOf(identifier) !== -1;
@@ -71,11 +111,8 @@ var makeSilencesOutro = function (usedClips) {
   var fd = fs.openSync('concat_silences.txt', 'w');
   favoredClips.forEach(function(f) {
     fs.writeSync(fd, "file '" + config.shortSilencesDirectory + f + "'\n");
+    total++;
   });
-  fs.closeSync(fd);
-  return;
-  var total = unUsedPeople.length;
-  
   for (var i = 0, len = unUsedPeople.length; i < len; i++) {
     fs.writeSync(fd, "file '" + config.shortSilencesDirectory + unUsedPeople[i] + "'\n");
   }
@@ -90,6 +127,7 @@ var makeSilencesOutro = function (usedClips) {
     total++;
   }
   fs.closeSync(fd);
+  return;
 };
 
 var getAllLengths = function (clips) {
@@ -385,7 +423,7 @@ var filterConnectionsListByTodaysClips = function (possibleList, favoredClips) {
     var start = connection[0], end = connection[1];
     // //console.log(favoredClips, favoredClips.indexOf(start), start, favoredClips.indexOf(end), end);
     // process.kill(process.pid);
-    return favoredClips.indexOf(start) !== -1 && favoredClips.indexOf(end) !== -1;
+    return favoredClips.indexOf(start) !== -1 || favoredClips.indexOf(end) !== -1;
   });
 };
 
@@ -456,7 +494,7 @@ var getStartingSegments = function () {
       var totalTime = 0, last = 0;
       var newSilence = [[0, 0]];
       silences.forEach(function (s) {
-        if (totalTime < config.segmentMinTime)
+        if (totalTime < config.startTime)
           newSilence.push(s)
         totalTime += s[1] - last;
         last = s[1];
@@ -502,6 +540,7 @@ var translatePickedConnectionSegmentToSilenceRange = function (connectionSegment
     var start = connectionSegment[0], end = connectionSegment[1],
         startSilences = getClosestSilenceRange(start[0], start[1]),
         endSilences = getClosestSilenceRange(end[0], end[1], goToEnd);
+    console.log(endSilences, startSilences);
     if (startSilences === null || endSilences === null)
       return null;
     return [ [word, start[0], startSilences ], [ word, end[0], endSilences ] ]
@@ -692,7 +731,8 @@ var getPath = function (word, allTheClips, edgeList) {
     } else {
       nextPath = translatePickedConnectionSegmentToSilenceRange(connection, word);
     }
-    if (nextPath !== null) {
+    if (nextPath.indexOf(null) === -1) {
+      // console.log(nextPath, "YUUPPPPPP");
       nextPath = drawRandomlyFromArray(nextPath);
       path = path.concat(nextPath);
       time = updateTime(time, nextPath, clipLengths);
@@ -842,6 +882,8 @@ populateGraph();
 edgeList = createEdgeList(graph);
 allTheWords = getAllTheWords(edgeList);
 getFavoredClips();
+favoredWords = getFavoredWords(edgeList);
+console.log(favoredWords, favoredClips);
 // console.log(favoredClips);
 // silences.kill();
 getStartingSegments();
@@ -862,16 +904,18 @@ getStartingSegments();
 //   }
 // }
 // writeUpWords("startingWordCounts");
-// makeClipWithSilences();
+// // makeClipWithSilences();
 
-path = getPath("hello", allTheClips, edgeList);
-console.log(path, time);
-path.forEach(function (item, i) {
-  console.log(item);
-  processClip(item[1], item[2], i);
-});
+// path = getPath("hello", allTheClips, edgeList);
+// console.log(path, time);
+// path.forEach(function (item, i) {
+//   console.log(item);
+//   // processClip(item[1], item[2], i);
+// });
+
+
 var finalOutput = makeVideo();
-usedClips = [];
+// usedClips = [];
 makeSilencesOutro(usedClips);
 var outroOutput = makeSilencesOutroClip();
 // cleanup(finalOutput, outroOutput);

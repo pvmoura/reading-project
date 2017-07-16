@@ -24,7 +24,6 @@ def get_volumes(filename, threshold=None, fraction=100):
 def get_silence_times(volumes, threshold=450, fraction=100.0, length=None):
 	on, start, silences, n_counter = False, None, [], 0
 	threshold, fraction = int(threshold), float(fraction)
-	print volumes, threshold
 	for i, n in enumerate(volumes):
 		i = float(i)
 		
@@ -38,7 +37,6 @@ def get_silence_times(volumes, threshold=450, fraction=100.0, length=None):
 			on, start, n_counter = False, None, 0
 		#elif on and start is not None and n < threshold:
 			#n_counter = 0
-		print n - threshold, i /fraction, n_counter
 	return silences, length
 
 def combine_silences(silences, noise_tolerance=0.03):
@@ -112,10 +110,8 @@ if __name__ == "__main__":
 		if silence_args[1] is None:
 			silence_args[1] = determine_silence_threshold(silence_args[0])
 		silences, length = get_silence_times(*silence_args)
-		print silences
 		silences = combine_silences(silences)
 		silences = filter(lambda x: x[1] - x[0] > 0.25, silences)
-		print len(silences)
 		filename = given[0].split('/')[-1]
 		output = {
 			'filename': filename.replace('Leveled-_', '').split('.')[0],
