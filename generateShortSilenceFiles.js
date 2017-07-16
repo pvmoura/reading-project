@@ -1,9 +1,12 @@
 var fs = require('fs');
 var config = JSON.parse(fs.readFileSync('config.json', 'utf8'));
 var child = require('child_process');
+var spawn = child.spawn;
 var rawDataDir = config.rawDataDirectory;
+var sync = process.argv[2];
+if (sync === 'sync')
+	child.spawnSync;
 var files = [];
-var filter = process.argv[2];
 if (typeof rawDataDir === 'undefined') {
 	console.log("Please set the raw data directory in the config file");
 	process.kill(process.pid);
@@ -32,14 +35,14 @@ var processShortSilence = function (filename, range) {
   var time = range[1] - range[0];
   var command = '-i ' + config.videoFileDirectory + filename + ".mov" + ' -c:v prores -profile:v 1 -ss ' + convertTimeToTimeStamp(range[0]) + ' -t ' + convertTimeToTimeStamp(time) + ' ' + output;
   console.log(command);
-  var result = child.spawn('ffmpeg', command.split(' '));
+  var result = spawn('ffmpeg', command.split(' '));
   return result;
 };
 
 files = fs.readdirSync(rawDataDir);
 files.forEach(function (filename) {
 	var split_file = filename.split('.');
-	if (split_file[1] === 'json' && split_file[0].indexOf(filter) !== -1) {
+	if (split_file[1] === 'wav') {
 		console.log(filename, identifier);
 		var fileData = JSON.parse(fs.readFileSync(config.rawDataDirectory + filename));
 		var identifier = filename.split('.')[0];

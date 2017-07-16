@@ -110,12 +110,14 @@ var makeSilencesOutro = function (usedClips) {
   });
   var fd = fs.openSync('concat_silences.txt', 'w');
   favoredClips.forEach(function(f) {
-    fs.writeSync(fd, "file '" + config.shortSilencesDirectory + f + "'\n");
+    fs.writeSync(fd, "file '" + config.shortSilencesDirectory + f + ".mov\n");
     total++;
   });
-  for (var i = 0, len = unUsedPeople.length; i < len; i++) {
-    fs.writeSync(fd, "file '" + config.shortSilencesDirectory + unUsedPeople[i] + "'\n");
-  }
+  
+  // for (var i = 0, len = unUsedPeople.length; i < len; i++) {
+  //   fs.writeSync(fd, "file '" + config.shortSilencesDirectory + unUsedPeople[i] + "'\n");
+  // }
+
   var filtered = shortSilenceFiles.filter(function (s) {
     var identifier = s.split('.')[0];
     return usedClips.indexOf(identifier) === -1 && unUsedPeople.indexOf(identifier) === -1;
@@ -510,6 +512,16 @@ var getStartingSegments = function () {
 
 };
 
+var drawFromTodaysClips = function (possibleList, favoredClips, usedClips) {
+  var temp = possibleList.filter(function (connection) {
+    var start = connection[0], end = connection[1];
+    if (usedClips.indexOf(start) !== -1 || usedClips.indexOf(end) !== -1)
+      return false;
+    return favoredClips.indexOf(start) !== -1 || favoredClips.indexOf(end) !== -1;
+  });
+  return drawRandomlyFromArray(temp);
+};
+
 var filterAllClipsByUsed = function(allTheClips, usedClips) {
   return allTheClips.filter(function (clip) {
     return usedClips.indexOf(clip) === -1;
@@ -623,7 +635,7 @@ var filterConnectionsListByManySilences = function (connectionList) {
     var start = connection[0], end = connection[1];
     // //console.log(allData[start].silences, allData[end].silences);
     // process.kill(process.pid);
-    if (allData[start].silences.length > 10 && allData[end].silences.length > 10)
+    if (allData[start].silences.length >= 3 && allData[end].silences.length >= 3)
       return true;
   });
 };
@@ -681,15 +693,17 @@ var getPath = function (word, allTheClips, edgeList) {
     if (typeof possibleList === 'undefined') {
       //console.log("WORD NOT IN EDGELIST", word);
       word = allTheWords.popByIndex(0);
-      keepGoing = false;
+      // keepGoing = false;
       continue;
     }
     
+
+    //console.log(possibleList);
+    possibleList = filterConnectionsListByUsedClips(possibleList, usedClips);
+
     if (favor) {
       possibleList = filterConnectionsListByTodaysClips(possibleList, favoredClips);
     }
-    //console.log(possibleList);
-    possibleList = filterConnectionsListByUsedClips(possibleList, usedClips);
     // if (lastFiveWereShort(clipLengths)) {
     //   possibleList = filterConnectionsListByFewSilences(possibleList);
     // } else {
@@ -722,8 +736,14 @@ var getPath = function (word, allTheClips, edgeList) {
       possibleList = futureConnections;
     }
     // possibleList = filterOutErrors(possibleList);
-    connection = drawRandomlyFromArray(possibleList);
+    // connection = drawRandomlyFromArray(possibleList);
+    connection = drawFromTodaysClips(possibleList, favoredClips, usedClips);
+    
+    if (!connection) {
+      connection = drawRandomlyFromArray(possibleList);
+    }
     connection = pickRandomConnectionSegment(connection, word);
+
     // console.log(connection);
     if (config.videoDuration - time <= 40) {
       nextPath = translatePickedConnectionSegmentToSilenceRange(connection, word, true);
@@ -882,9 +902,13 @@ populateGraph();
 edgeList = createEdgeList(graph);
 allTheWords = getAllTheWords(edgeList);
 getFavoredClips();
+<<<<<<< HEAD
 favoredWords = getFavoredWords(edgeList);
 console.log(favoredWords, favoredClips);
 // console.log(favoredClips);
+=======
+console.log(favoredClips);
+>>>>>>> 1ee9b7b5d92e02d5f250a4b2163281ac800b4562
 // silences.kill();
 getStartingSegments();
 // getEndingSegments();
@@ -914,8 +938,18 @@ getStartingSegments();
 // });
 
 
+<<<<<<< HEAD
 var finalOutput = makeVideo();
 // usedClips = [];
+=======
+// path = getPath("hello", allTheClips, edgeList);
+// console.log(path, time);
+// path.forEach(function (item, i) {
+//   console.log(item);
+//   processClip(item[1], item[2], i);
+// });
+// var finalOutput = makeVideo();
+>>>>>>> 1ee9b7b5d92e02d5f250a4b2163281ac800b4562
 makeSilencesOutro(usedClips);
 var outroOutput = makeSilencesOutroClip();
 // cleanup(finalOutput, outroOutput);
