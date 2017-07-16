@@ -5,7 +5,6 @@ var silences = child.execFile('./silences.py');
 var identifier;
 var filename = process.argv[2];
 var fullFilename = config.waveFileDirectory + filename;
-console.log(fullFilename, "IN PROCESS");
 var PID = process.pid;
 if (typeof filename === 'undefined' || filename.split('.')[1] !== 'wav') {
 	console.log("Bad Filename -- either you didn't give me one or it wasn't a WAV file");
@@ -38,7 +37,10 @@ silences.stdout.on('data', function (data) {
 	var JSObj, JSObjLoc = config.rawDataDirectory + identifier + '.json', fd;
 	data = JSON.parse(data.trim());
 	data['shortSilences'] = getShortSilences(data.silences, config.shortSilenceMax, config.shortSilenceMin);
-	console.log(data.shortSilences);
+	if (filename.indexOf('P') !== -1)
+		data['portrait'] = true;
+	else
+		data['portrait'] = false;
 	if (fs.existsSync(JSObjLoc)) {
 		JSObj = JSON.parse(fs.readFileSync(JSObjLoc, 'utf-8'));
 	} else {

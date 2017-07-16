@@ -4,6 +4,13 @@ var child = require('child_process');
 var rawDataDir = config.rawDataDirectory;
 var files = [];
 var filename = process.argv[2], identifier, fullFilenameRawData;
+var portraits = process.argv[3];
+var didLong = false, didShort = false;
+if (portraits !== 'portraits')
+	var DIR = config.videoFileDirectory;
+else
+	var DIR = config.portraitsDirectory;
+
 if (typeof filename === 'undefined' || filename.split('.')[1] !== 'wav') {
 	console.log("Bad Filename -- either you didn't give me one or it wasn't a WAV file");
 	process.kill(PID);
@@ -28,10 +35,10 @@ var convertTimeToTimeStamp = function (time) {
 };
 
 
-var processShortSilence = function (filename, range) {
+var processShortSilence = function (filename, filenameInClips, range) {
   var output = config.shortSilencesDirectory + filename + '.mov';
   var time = range[1] - range[0];
-  var command = '-i ' + config.portraitsDirectory + filename + ".mov" + ' -c:v prores -profile:v 1 -ss ' + convertTimeToTimeStamp(range[0]) + ' -t ' + convertTimeToTimeStamp(time) + ' ' + output;
+  var command = '-i ' + DIR + filenameInClips + ".mov" + ' -c:v prores -profile:v 1 -ss ' + convertTimeToTimeStamp(range[0]) + ' -t ' + convertTimeToTimeStamp(time) + ' ' + output;
   console.log(command);
   var result = child.spawn('ffmpeg', command.split(' '));
   return result;
@@ -46,11 +53,25 @@ if (fs.existsSync(fullFilenameRawData)) {
 		console.log("NO SHORT SILENCES RECORDED FOR FILE:", filename);
 	}
 	silence = drawRandomlyFromArray(fileData.shortSilences);
-	if (typeof silence === 'undefined') {
-		console.log("NO SHORT SILENCES IN FILE:", filename);
-		return;
-	}
-	processShortSilence(identifier, silence);
+	didLong = 0;
+	fileData.shortSilences.forEach(function (s) {
+		var totalTime = Math.round((s[1] - s[0]) * 100);
+		if (!didLong && totalTime >= 90) {
+			processShortSilence(identifier + "__" + totalTime, identifier, s);
+			didLong = true;
+		} else if (!didShort && totalTime <= 50) {
+			didShort = true;
+			processShortSilence(identifier + "__" + totalTime, identifier, s);
+		}
+
+		// console.log(s, identifier + "__" + totalTime);
+		
+	});
+	// if (typeof silence === 'undefined') {
+	// 	console.log("NO SHORT SILENCES IN FILE:", filename);
+	// 	return;
+	// }
+	
 } else {
 	console.log("NO RAW DATA FOR FILE", fullFilenameRawData);
 }

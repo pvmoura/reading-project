@@ -70,15 +70,13 @@ var makeSilencesOutro = function (usedClips) {
   });
   var fd = fs.openSync('concat_silences.txt', 'w');
   favoredClips.forEach(function(f) {
-    fs.writeSync(fd, "file '" + config.shortSilencesDirectory + f + "'\n");
+    fs.writeSync(fd, "file '" + config.shortSilencesDirectory + f + '.mov\n');
   });
-  fs.closeSync(fd);
-  return;
   var total = unUsedPeople.length;
   
-  for (var i = 0, len = unUsedPeople.length; i < len; i++) {
-    fs.writeSync(fd, "file '" + config.shortSilencesDirectory + unUsedPeople[i] + "'\n");
-  }
+  // for (var i = 0, len = unUsedPeople.length; i < len; i++) {
+  //   fs.writeSync(fd, "file '" + config.shortSilencesDirectory + unUsedPeople[i] + "'\n");
+  // }
   var filtered = shortSilenceFiles.filter(function (s) {
     var identifier = s.split('.')[0];
     return usedClips.indexOf(identifier) === -1 && unUsedPeople.indexOf(identifier) === -1;
@@ -594,7 +592,7 @@ var filterConnectionsListByManySilences = function (connectionList) {
     var start = connection[0], end = connection[1];
     // //console.log(allData[start].silences, allData[end].silences);
     // process.kill(process.pid);
-    if (allData[start].silences.length > 3 && allData[end].silences.length > 3)
+    if (allData[start].silences.length >= 3 && allData[end].silences.length >= 3)
       return true;
   });
 };
@@ -652,7 +650,7 @@ var getPath = function (word, allTheClips, edgeList) {
     if (typeof possibleList === 'undefined') {
       //console.log("WORD NOT IN EDGELIST", word);
       word = allTheWords.popByIndex(0);
-      keepGoing = false;
+      // keepGoing = false;
       continue;
     }
     
@@ -882,13 +880,13 @@ getStartingSegments();
 // writeUpWords("startingWordCounts");
 // makeClipWithSilences();
 
-path = getPath("hello", allTheClips, edgeList);
-console.log(path, time);
-path.forEach(function (item, i) {
-  console.log(item);
-  processClip(item[1], item[2], i);
-});
-var finalOutput = makeVideo();
+// path = getPath("hello", allTheClips, edgeList);
+// console.log(path, time);
+// path.forEach(function (item, i) {
+//   console.log(item);
+//   processClip(item[1], item[2], i);
+// });
+// var finalOutput = makeVideo();
 makeSilencesOutro(usedClips);
 var outroOutput = makeSilencesOutroClip();
 // cleanup(finalOutput, outroOutput);

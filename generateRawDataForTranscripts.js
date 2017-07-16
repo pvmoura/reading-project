@@ -7,5 +7,8 @@ var files = [];
 files = fs.readdirSync(soundFilesDir);
 files.forEach(function (filename) {
 	console.log(filename);
-	child.spawnSync('node', ['./processSilencesAndShortSilences.js', filename]);
+	// child.spawn('node', ['./processSilencesAndShortSilences.js', filename]);
+	// child.spawn('node', ['./singleFileWatsonTranscription.js', filename]);
+	child.spawnSync('node', ['./generateShortSilencesForFile.js', filename]);
+	
 });

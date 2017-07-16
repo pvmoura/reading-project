@@ -1,6 +1,6 @@
 #! /usr/bin/python 
 
-import audioop, wave, os, sys, json, contextlib
+import audioop, wave, os, sys, json, contextlib, numpy
 #DIR = '/home/pedro/Dropbox/Exquisite_Corpse/short_samples/20160522_109_jody_azzouni_1.wav'
 #DIR = '/home/pedro/Dropbox/Exquisite_Corpse/Sample audio 060217/'
 DIR = "/Users/readingspeaks/Dropbox/Exquisite_Corpse/short_samples/20160521_096_daniel_browne.wav"
@@ -9,7 +9,7 @@ DIR = "/Users/readingspeaks/Dropbox/Exquisite_Corpse/short_samples/20160522_122_
 DIR = "/Users/pedrovmoura/Dropbox/Exquisite_Corpse/short_samples/20160522_122_michael_levine.wav"
 DIR = "/Volumes/RS1/CLIPS/20170711-1_S020_T.wav"
 DIR = "/Volumes/RS1/CLIPS/20170709-1_S01_T.wav"
-def get_volumes(filename, threshold=None, fraction=100):
+def get_volumes(filename, threshold=None, fraction=50):
 	fraction, ls, length = int(fraction), [], None
 	with contextlib.closing(wave.open(filename, 'r')) as w:
 		framerate = w.getframerate()
@@ -19,14 +19,15 @@ def get_volumes(filename, threshold=None, fraction=100):
 		while len(l) > 0:
 			ls.append(l)
 			l = w.readframes(fr)
-	return map(lambda l: audioop.rms(l, 2), ls), threshold, fraction, length
+	volumes = map(lambda l: audioop.rms(l, 2), ls)
+	return filter(lambda l: l > 0, volumes), threshold, fraction, length
 
-def get_silence_times(volumes, threshold=450, fraction=100.0, length=None):
+def get_silence_times(volumes, threshold=450, fraction=50.0, length=None):
 	on, start, silences, n_counter = False, None, [], 0
 	threshold, fraction = int(threshold), float(fraction)
 	for i, n in enumerate(volumes):
 		i = float(i)
-		
+		print n
 		if n < threshold and not on and start is None:
 			on = True
 			start = i / fraction
@@ -39,7 +40,7 @@ def get_silence_times(volumes, threshold=450, fraction=100.0, length=None):
 			#n_counter = 0
 	return silences, length
 
-def combine_silences(silences, noise_tolerance=0.03):
+def combine_silences(silences, noise_tolerance=0.15):
 	import pdb
 	def get_all_indices(haystack, needle, cmp=lambda x, y: x == y):
 		return [i for i, x in enumerate(haystack) if cmp(x, needle)]
@@ -79,6 +80,8 @@ def combine_silences(silences, noise_tolerance=0.03):
 	skipped_end = None
 	for i, silence in enumerate(silences):
 		current_start, current_end = silence
+		if round(current_end - current_start, 2) <= .05:
+			continue
 		if previous_end is None:
 			previous_end = current_end
 			temp_silences.append([current_start, current_end])
@@ -94,10 +97,19 @@ def combine_silences(silences, noise_tolerance=0.03):
 	return sorted(combine_multiples(temp_silences), key=lambda e: e[0])
 
 
+def convert_silence_times_to_volume_values(silences, volumes, fraction=100.0):
+	volume_indices = map(lambda s: [ s[0] * fraction, s[1] * fraction ], silences)
+	volume_values = []
+	for v in volume_indices:
+		temp = volumes[int(v[0]):int(v[1])]
+		volume_values.append(temp)
+	return volume_values
+
+
 def determine_silence_threshold(volumes):
 	max_val, min_val = max(volumes), min(volumes)
 	diff = max_val - min_val
-	threshold = (diff * .4) + min_val
+	threshold = (diff * .05) + min_val
 	return threshold
 
 if __name__ == "__main__":
@@ -107,16 +119,22 @@ if __name__ == "__main__":
 		if len(given) > 3 or len(given) <= 0:
 			continue
 		silence_args = list(get_volumes(*given))
+		volumes = silence_args[0]
 		if silence_args[1] is None:
 			silence_args[1] = determine_silence_threshold(silence_args[0])
+			threshold = silence_args[1]
 		silences, length = get_silence_times(*silence_args)
 		silences = combine_silences(silences)
 		silences = filter(lambda x: x[1] - x[0] > 0.25, silences)
+		silence_volumes = convert_silence_times_to_volume_values(silences, volumes)
+		# for i, v in enumerate(silence_volumes):
+		# 	print 'std:', numpy.std(v), 'thresh:', threshold, 'max:', max(v), 'min:', min(v), 'mean:', numpy.mean(v), 'max-min:', max(v) - min(v), 'silence:', silences[i]
 		filename = given[0].split('/')[-1]
 		output = {
 			'filename': filename.replace('Leveled-_', '').split('.')[0],
 			'silences': silences,
-			'fileLength': length
+			'fileLength': round(length, 2)
+			#'silenceLengths': map(lambda s: [round((s[1] - s[0]) * 100, 2), s], silences)
 		}
 		sys.stdout.write(json.dumps(output) + "\n")
 
