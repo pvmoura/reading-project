@@ -41,6 +41,10 @@ silences.stdout.on('data', function (data) {
 		data['portrait'] = true;
 	else
 		data['portrait'] = false;
+	if (filename.indexOf('C') !== -1)
+		data['curated'] = true;
+	else
+		data['curated'] = false;
 	if (fs.existsSync(JSObjLoc)) {
 		JSObj = JSON.parse(fs.readFileSync(JSObjLoc, 'utf-8'));
 	} else {
