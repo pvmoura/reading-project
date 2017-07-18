@@ -2,12 +2,22 @@ var fs = require('fs');
 var child = require('child_process');
 var config = JSON.parse(fs.readFileSync('config.json', 'utf8'));
 var today = process.argv[2];
+var numberOfClips = parseInt(process.argv[3], 10);
 var files = fs.readdirSync(config.rawDataDirectory);
 var shortSilenceFiles = fs.readdirSync(config.shortSilencesDirectory);
 if (typeof today === 'undefined') {
   console.log("NEED AN INDENTIFIER");
   process.kill(process.pid);
 }
+if (typeof numberOfClips === 'undefined') {
+  console.log("NO NUMBER OF SIILENCES GIVEN, PRODUCING OUTRO WITH 15 SILENCES");
+  numberOfClips = 15;
+}
+if (typeof numberOfClips !== 'number') {
+  console.log("NOT A VALID NUMBER OF CLIPS, PLEASE USE AN INTEGER VALUE");
+  process.kill(process.pid);
+}
+
 var favoredClips = [];
 try {
   fs.unlinkSync('./concat_silences.txt');
@@ -44,7 +54,7 @@ var makeSilencesOutro = function () {
   // for (var i = 0, len = unUsedPeople.length; i < len; i++) {
   //   fs.writeSync(fd, "file '" + config.shortSilencesDirectory + unUsedPeople[i] + "'\n");
   // }
-  while (total < 18) {
+  while (total < numberOfClips) {
     var shortSilenceClip = drawRandomlyFromArray(filtered);
     if (typeof shortSilenceClip !== 'undefined')
       fs.writeSync(fd, "file '" + config.shortSilencesDirectory + shortSilenceClip + "'\n");
