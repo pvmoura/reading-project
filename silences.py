@@ -9,7 +9,7 @@ DIR = "/Users/readingspeaks/Dropbox/Exquisite_Corpse/short_samples/20160522_122_
 DIR = "/Users/pedrovmoura/Dropbox/Exquisite_Corpse/short_samples/20160522_122_michael_levine.wav"
 DIR = "/Volumes/RS1/CLIPS/20170711-1_S020_T.wav"
 DIR = "/Volumes/RS1/CLIPS/20170709-1_S01_T.wav"
-def get_volumes(filename, threshold=None, fraction=50):
+def get_volumes(filename, threshold=None, fraction=100):
 	fraction, ls, length = int(fraction), [], None
 	with contextlib.closing(wave.open(filename, 'r')) as w:
 		framerate = w.getframerate()
@@ -22,12 +22,11 @@ def get_volumes(filename, threshold=None, fraction=50):
 	volumes = map(lambda l: audioop.rms(l, 2), ls)
 	return filter(lambda l: l > 0, volumes), threshold, fraction, length
 
-def get_silence_times(volumes, threshold=450, fraction=50.0, length=None):
+def get_silence_times(volumes, threshold=450, fraction=100.0, length=None):
 	on, start, silences, n_counter = False, None, [], 0
 	threshold, fraction = int(threshold), float(fraction)
 	for i, n in enumerate(volumes):
 		i = float(i)
-		print n
 		if n < threshold and not on and start is None:
 			on = True
 			start = i / fraction
@@ -109,7 +108,7 @@ def convert_silence_times_to_volume_values(silences, volumes, fraction=100.0):
 def determine_silence_threshold(volumes):
 	max_val, min_val = max(volumes), min(volumes)
 	diff = max_val - min_val
-	threshold = (diff * .05) + min_val
+	threshold = (diff * .25) + min_val
 	return threshold
 
 if __name__ == "__main__":

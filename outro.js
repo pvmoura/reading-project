@@ -54,6 +54,10 @@ var makeSilencesOutro = function () {
   // for (var i = 0, len = unUsedPeople.length; i < len; i++) {
   //   fs.writeSync(fd, "file '" + config.shortSilencesDirectory + unUsedPeople[i] + "'\n");
   // }
+
+  var filtered = shortSilenceFiles.filter(function (f) {
+    return favoredClips.indexOf(f.split('.')[0]) === -1;
+  });
   while (total < numberOfClips) {
     var shortSilenceClip = drawRandomlyFromArray(filtered);
     if (typeof shortSilenceClip !== 'undefined')
@@ -76,6 +80,6 @@ favoredClips = getFavoredClips(today);
 favoredClips.forEach(function (filename) {
   child.spawnSync('node', ['./generateShortSilencesForFile.js', filename + ".wav"]);
 });
-makeSilencesOutro();
-makeSilencesOutroClip();
+// makeSilencesOutro();
+// makeSilencesOutroClip();
 

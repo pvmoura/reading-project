@@ -499,12 +499,16 @@ var translateToSegments = function (clip, word, range) {
 };
 
 var getStartingSegments = function () {
+  var hack = true;
   for (var key in allData) {
-    if (allData.hasOwnProperty(key)) {
-      if (favoredClips.length > 0 && favoredClips.indexOf(key) === -1) {
-        continue;
-      }
+    // console.log(key);
+    if (allData.hasOwnProperty(key) && favoredClips.indexOf(key) !== -1) {
+      // if (favoredClips.length > 0 && favoredClips.indexOf(key) === -1) {
+      //   continue;
+      // }
+      console.log(key);
       var silences = allData[key].silences;
+      console.log(silences);
       var totalTime = 0, last = 0;
       var newSilence = [[0, 0]];
       silences.forEach(function (s) {
@@ -513,11 +517,13 @@ var getStartingSegments = function () {
         totalTime += s[1] - last;
         last = s[1];
       });
-      ////(newSilence);
+      // console.log(newSilence);
       newSilence = reduceToStartAndEndPoints(newSilence);
       totalTime = newSilence[1] - newSilence[0];
-      if (typeof startingSegments[key] === 'undefined' && totalTime >= config.segmentMinTime && totalTime <= config.segmentMaxTime) {
+      if (typeof startingSegments[key] === 'undefined') {// && silences.length == 2 && hack) { //&& totalTime >= config.segmentMinTime && totalTime <= config.segmentMaxTime) {
+        // newSilence.push(silences[1]);
         startingSegments[key] = newSilence;
+        // hack = false;
       }
     }
   }
@@ -647,7 +653,7 @@ var filterConnectionsListByManySilences = function (connectionList) {
     var start = connection[0], end = connection[1];
     // //console.log(allData[start].silences, allData[end].silences);
     // process.kill(process.pid);
-    if (allData[start].silences.length >= 3 && allData[end].silences.length >= 3)
+    if (allData[start].silences.length >= 2 && allData[end].silences.length >= 2)
       return true;
   });
 };
@@ -664,6 +670,7 @@ var getPath = function (word, allTheClips, edgeList) {
   var featured;
   // go down edgeList for the word until you have a connection
   var clipLengths = [], usedSilences = [], keepGoing = true, favor = true;
+  var alreadyFeatured = 0;
   
   while (time < config.videoDuration && keepGoing) {
     if (start) {
@@ -713,8 +720,8 @@ var getPath = function (word, allTheClips, edgeList) {
 
     //console.log(possibleList);
     possibleList = filterConnectionsListByUsedClips(possibleList, usedClips);
-    console.log(possibleList.length);
-
+    // console.log(possibleList.length);
+    console.log(time);
     // if (lastFiveWereShort(clipLengths)) {
     //   possibleList = filterConnectionsListByFewSilences(possibleList);
     // // } else {
@@ -724,13 +731,13 @@ var getPath = function (word, allTheClips, edgeList) {
       if (path.length >= 3) {
         featured = filterConnectionsListByFeatured(possibleList);
         if (featured.length > 0) {
-          featured = translateConnectionsToSegments(possibleList, word, config.segmentMinTime);
+          featured = translateConnectionsToSegments(possibleList, word, config.featuredTime);
           featured = filterConnectionsSegmentsByFutureConnection(possibleList, word, usedWords);
         }
       }
-      featured = false;
-      console.log(featured, possibleList.length)
-      if (path.length < 3 || !featured || featured.length == 0 || alreadyFeatured) {
+      // featured = false;
+      // console.log(featured, possibleList.length)
+      if (path.length < 3 || !featured || featured.length == 0 || alreadyFeatured > 2) {
         if (favor) {
           possibleList = filterConnectionsListByTodaysClips(possibleList, favoredClips);
         }
@@ -756,6 +763,7 @@ var getPath = function (word, allTheClips, edgeList) {
           possibleList = futureConnections;
         }
       } else {
+        alreadyFeatured++;
         possibleList = featured;
       }
 
@@ -895,7 +903,7 @@ files.forEach(function (filename) {
       var dataFile = JSON.parse(fs.readFileSync(config.rawDataDirectory + filename), 'utf-8');
 
     // //console.log(allData, config.transcriptsDirectory, identifier, soundFile, dataFile);
-    if (dataFile && !dataFile.portrait) { //&& fs.existsSync(config.videoFileDirectory + identifier + '.mov')) {
+    if (dataFile && !dataFile.portrait && fs.existsSync(config.videoFileDirectory + identifier + '.mov')) {
       if (typeof allData[identifier] === 'undefined')
         allData[identifier] = dataFile;
     
@@ -941,10 +949,10 @@ allTheWords = getAllTheWords(edgeList);
 getFavoredClips();
 favoredWords = getFavoredWords(edgeList);
 // console.log(favoredWords, favoredClips);
-// console.log(favoredClips);
+console.log(favoredClips);
 // silences.kill();
 getStartingSegments();
-// console.log(startingSegments);
+console.log(startingSegments);
 // getEndingSegments();
 // writeUpWords("wordCounts");
 // ////(endingSegments);
@@ -978,9 +986,9 @@ path = getPath("hello", allTheClips, edgeList);
 console.log(path, "HELLLLLLLLO", time);
 path.forEach(function (item, i) {
   console.log(item);
-  // processClip(item[1], item[2], i);
+  processClip(item[1], item[2], i);
 });
-// var finalOutput = makeVideo();
+var finalOutput = makeVideo();
 // makeSilencesOutro(usedClips);
 // var outroOutput = makeSilencesOutroClip();
 // cleanup(finalOutput, outroOutput);
