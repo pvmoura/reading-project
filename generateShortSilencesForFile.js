@@ -3,13 +3,8 @@ var config = JSON.parse(fs.readFileSync('config.json', 'utf8'));
 var child = require('child_process');
 var rawDataDir = config.rawDataDirectory;
 var files = [];
-var filename = process.argv[2], identifier, fullFilenameRawData;
-var portraits = process.argv[3];
+var filename = process.argv[2], identifier, fullFilenameRawData, silencesWithTotalTime;
 var didLong = false, didShort = false;
-if (portraits !== 'portraits')
-	var DIR = config.videoFileDirectory;
-else
-	var DIR = config.portraitsDirectory;
 
 if (typeof filename === 'undefined' || filename.split('.')[1] !== 'wav') {
 	console.log("Bad Filename -- either you didn't give me one or it wasn't a WAV file");
@@ -52,25 +47,21 @@ if (fs.existsSync(fullFilenameRawData)) {
 	if (typeof fileData.shortSilences === 'undefined') {
 		console.log("NO SHORT SILENCES RECORDED FOR FILE:", filename);
 	}
-	silence = drawRandomlyFromArray(fileData.shortSilences);
-	didLong = 0;
-	fileData.shortSilences.forEach(function (s) {
-		var totalTime = Math.round((s[1] - s[0]) * 100);
-		if (!didLong && totalTime >= 90) {
-			processShortSilence(identifier + "__" + totalTime, identifier, s);
-			didLong = true;
-		} else if (!didShort && totalTime <= 50) {
-			didShort = true;
-			processShortSilence(identifier + "__" + totalTime, identifier, s);
-		}
-
-		// console.log(s, identifier + "__" + totalTime);
-		
+	silencesWithTotalTime = fileData.shortSilences.map(function (ss) {
+		return [Math.round((ss[1] - ss[0]) * 100), ss];
 	});
-	// if (typeof silence === 'undefined') {
-	// 	console.log("NO SHORT SILENCES IN FILE:", filename);
-	// 	return;
-	// }
+	silencesWithTotalTime.sort(function (a, b) {
+		if (a[0] < b[0]) return 1;
+		else if (a[0] > b[0]) return -1;
+		else return 0;
+	});
+	if (silencesWithTotalTime.length > 2) {
+		silencesWithTotalTime = [silencesWithTotalTime[0], silencesWithTotalTime.pop()];
+	}
+	silencesWithTotalTime.forEach(function (s) {
+		var totalTime = s[0];
+		processShortSilence(identifier + "__" + totalTime, identifier, s[1]);
+	});
 	
 } else {
 	console.log("NO RAW DATA FOR FILE", fullFilenameRawData);
