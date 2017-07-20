@@ -20,7 +20,7 @@ def get_volumes(filename, threshold=None, fraction=100):
 			ls.append(l)
 			l = w.readframes(fr)
 	volumes = map(lambda l: audioop.rms(l, 2), ls)
-	return filter(lambda l: l > 0, volumes), threshold, fraction, length
+	return volumes, threshold, fraction, length
 
 def get_silence_times(volumes, threshold=450, fraction=100.0, length=None):
 	on, start, silences, n_counter = False, None, [], 0
@@ -39,7 +39,7 @@ def get_silence_times(volumes, threshold=450, fraction=100.0, length=None):
 			#n_counter = 0
 	return silences, length
 
-def combine_silences(silences, noise_tolerance=0.15):
+def combine_silences(silences, noise_tolerance=0.02):
 	import pdb
 	def get_all_indices(haystack, needle, cmp=lambda x, y: x == y):
 		return [i for i, x in enumerate(haystack) if cmp(x, needle)]
@@ -106,9 +106,13 @@ def convert_silence_times_to_volume_values(silences, volumes, fraction=100.0):
 
 
 def determine_silence_threshold(volumes):
+	std = numpy.std(volumes)
+	avg = numpy.mean(volumes)
+	volumes = filter(lambda l: l < avg + (2 * std), volumes)
 	max_val, min_val = max(volumes), min(volumes)
 	diff = max_val - min_val
-	threshold = (diff * .25) + min_val
+	threshold = (diff * .2 ) + min_val
+	#threshold = 655
 	return threshold
 
 if __name__ == "__main__":
@@ -127,7 +131,7 @@ if __name__ == "__main__":
 		silences = filter(lambda x: x[1] - x[0] > 0.25, silences)
 		silence_volumes = convert_silence_times_to_volume_values(silences, volumes)
 		# for i, v in enumerate(silence_volumes):
-		# 	print 'std:', numpy.std(v), 'thresh:', threshold, 'max:', max(v), 'min:', min(v), 'mean:', numpy.mean(v), 'max-min:', max(v) - min(v), 'silence:', silences[i]
+		#print 'std:', numpy.std(volumes), len(volumes), len(filter(lambda l: l > 380, volumes)), 'mean:', numpy.mean(volumes), 'max:', max(volumes), 'min:', min(volumes), 'thresh:', threshold,  # 'max-min:', max(v) - min(v), 'silence:', silences[i]
 		filename = given[0].split('/')[-1]
 		output = {
 			'filename': filename.replace('Leveled-_', '').split('.')[0],

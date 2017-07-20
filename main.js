@@ -3,7 +3,7 @@ var config = JSON.parse(fs.readFileSync('config.json', 'utf8'));
 var mostCommonWords = JSON.parse(fs.readFileSync('most_common_words.json', 'utf-8'));
 mostCommonWords = mostCommonWords.map( function (word) { return word.toLowerCase(); } );
 var child = require('child_process');
-var rawDataFiles = fs.readdirSync(config.rawDataDirectory);
+var rawDataFiles;
 var allTheLengths = {};
 var allData = {};
 var usedClips = [];
@@ -39,6 +39,14 @@ Object.prototype.objectToItems = function () {
       items.push([key, this[key]]);
   }
   return items;
+};
+var orderWithFirstElemArray = function (a, b) {
+  if (a[1].length > b[1].length)
+    return -1;
+  else if (a[1].length < b[1].length)
+    return 1;
+  else
+    return 0;
 };
 
 var getRandomInt = function (min, max) {
@@ -101,7 +109,7 @@ var getAllTheWords = function (edgeList) {
   return words.map(function (w) { return w[0]; });
 };
 
-var getFavoredClips = function (favoredIdentifier) {
+var getFavoredClips = function (rawDataFiles, favoredIdentifier) {
   var favoredClips = rawDataFiles.map(function (f) {
     return f.split('.')[0];
   });
@@ -499,10 +507,7 @@ var filterSilencesByTime = function (allTheSilences, startMinTime, startMaxTime)
 
 var filterSilenceArrayByStartAndEnd = function(silenceArray, startTime, minLength, maxLength) {
   var filteredSilenceArray = filterSilenceArrayByStartTime(silenceArray, startTime);
-  console.log(filteredSilenceArray);
-  filteredSilenceArray = filterSilenceArrayByEndTime(filteredSilenceArray, 1000);
-  console.log(filteredSilenceArray);
-  process.kill(process.pid);
+  filteredSilenceArray = filterSilenceArrayByEndTime(filteredSilenceArray, startTime + maxLength);
   return filteredSilenceArray;
 };
 
@@ -592,44 +597,37 @@ var addUsedThings = function (connection, nextPath, usedSegments, usedClips, use
 };
 var addUsedClip = function(clip, usedClips) {
   usedClips.push(clip);
-}
-var orderStartingSegmentsByConnections = function (startingSegments, edgeList, usedClips, usedWords) {
-  var ordered = [], sr;
-  for (var key in startingSegments) {
-    if (startingSegments.hasOwnProperty(key)) {
-      if (usedClips.indexOf(key) === -1) {
-        sr = startingSegments[key];
-        words = getWordsFromRange(key, sr);
-        words = filterUndesirableWords(words, usedWords);
-        words = orderByConnections(words);
-        ordered.push([key, words]);
-      }
-    }
-  }
-  ordered.sort(function (a, b) {
-    if (a[1].length > b[1].length)
-      return -1;
-    else if (a[1].length < b[1].length)
-      return 1;
-    else
-      return 0;
-  });
-  return ordered;
 };
 
-var getShortSilences = function () {
-  for (var key in allData) {
-    if (allData.hasOwnProperty(key)) {
-      var esses = allData[key].silences;
-      esses.filter(function (ess) {
-        var diff = ess[1] - ess[0];
-        if (diff >= 1) {
-          shortSilences.push([ key, ess ]);
-        }
-      });
-    }
-  }
+var orderStartSilencesByConnections = function (startSilences, edgeList, usedWords) {
+  var startingWords = startSilences.map(function (silenceItem) {
+    var clipIdentifier = silenceItem[0], silences = silenceItem[1];
+    var range = reduceToStartAndEndPoints(silences), words;
+    words = getWordsFromRange(clipIdentifier, range);
+    words = filterUndesirableWords(words, usedWords);
+    words = orderByConnections(words);
+    return [ clipIdentifier, words ];
+  });
+  startingWords.sort(orderWithFirstElemArray);
+  return startingWords;
 };
+
+var filterStartSilencesByConnections = function (startSilences, edgeList, usedWords) {
+  var filtered = startSilences.map(function (silenceItem) {
+    var clipIdentifier = silenceItem[0], silences = silenceItem[1];
+    var range = reduceToStartAndEndPoints(silences), words;
+    words = getWordsFromRange(clipIdentifier, range);
+    words = filterUndesirableWords(words, usedWords);
+    words = orderByConnections(words);
+    if (words.length > 0)
+      return [ clipIdentifier, words ];
+    else return null;
+  });
+  filtered = filtered.filter(function (elem) { return elem !== null; })
+  filtered.sort(orderWithFirstElemArray);
+  return filtered;
+};
+
 
 var filterConnectionsListByFewSilences = function (connectionList) {
   return connectionList.filter(function (connection) {
@@ -655,63 +653,44 @@ var lastFiveWereShort = function (clipLengths) {
   });
   return lastFive.length >= 8;
 }
-var getPath = function (word, allTheClips, edgeList) {
+
+// from that list, pick a connection that you haven't used yet
+// in the connections list, I should do the work I do later
+// of translating to segments and checking that they have a connection
+// of course that will change as clips get used, so I need to do this each time
+// should filter list (and keep around) instead of picking immediately and moving on
+// maybe should save the filtered lists in a dictionary?
+// Or just do the work all over again?
+
+var getPath = function (allTheClips, edgeList, startSilences, startWords) {
   var path = [], usedSegments = [], ordered = [], segment, possibleList = [], start = true, clip, wordsInSegment, wordsTimestamps, usedWords = [], counter = 0;
   var featured;
-  // go down edgeList for the word until you have a connection
   var clipLengths = [], usedSilences = [], keepGoing = true, favor = true;
   var alreadyFeatured = 0;
   
   while (time < config.videoDuration && keepGoing) {
     if (start) {
-      //console.log("IN START");
-      word = drawRandomlyFromArray(allTheWords);
-      var clips = filterAllClipsByUsed(allTheClips, usedClips);
-      // clip = drawRandomlyFromArray(clips);
-      // usedClips.push(clip);
-      ordered = orderStartingSegmentsByConnections(startingSegments, edgeList, usedClips, usedWords);
-      segmentAndClip = ordered[0];
-      clip = segmentAndClip[0];
-      segment = segmentAndClip[1];
-      addUsedSegments(clip, startingSegments[clip], usedSegments);
-      nextPath = ['START', clip, startingSegments[clip]];
+      clip = startSilences[0];
+      segment = startWords[1];
+      console.log(startSilences[1], startSilences);
+      startSilence = reduceToStartAndEndPoints(startSilences[1]);
+      addUsedSegments(clip, startSilence, usedSegments);
+      nextPath = ['START', clip, startSilence];
       addUsedClip(clip, usedClips);
       path.push(nextPath);
       time = updateTimeWithOneClip(time, nextPath, clipLengths);
-      //console.log(path);
-      // segment = getWordsFromRange(clip, startingSegments[clip]);
-      // //console.log(segment);
-      // segment = filterUndesirableWords(segment);
-      // segment = orderByConnections(segment);
-      // //console.log(segment);
-      // word = drawRandomlyFromArray(segment);
       word = segment[0];
       start = false;
     }
-    // } else if (getRandomInt(0, 9) === 8) {
-    //   // pepper in a silence
-    //   //console.log("ADDING A SHORT SILENCE");
-    //   var ss = shortSilences.popByIndex(0);
-    //   if (ss != null && usedSilences.indexOf(ss[0])) {
-    //     usedSilences.push(ss[0]);
-    //     path.push(['shortSilence', ss[0], ss[1]]);
-    //   }
-    // }
-    // first pick a list of connections by that word
     possibleList = edgeList[word];
     
     if (typeof possibleList === 'undefined') {
-      //console.log("WORD NOT IN EDGELIST", word);
       word = allTheWords.popByIndex(0);
-      // keepGoing = false;
       continue;
     }
-    
 
-    //console.log(possibleList);
     possibleList = filterConnectionsListByUsedClips(possibleList, usedClips);
-    // console.log(possibleList.length);
-    console.log(time);
+    
     // if (lastFiveWereShort(clipLengths)) {
     //   possibleList = filterConnectionsListByFewSilences(possibleList);
     // // } else {
@@ -775,72 +754,19 @@ var getPath = function (word, allTheClips, edgeList) {
     connection = pickRandomConnectionSegment(connection, word);
 
     // console.log(connection);
-    if (config.videoDuration - time <= 40) {
+    if (config.videoDuration - time <= 20) {
       nextPath = translatePickedConnectionSegmentToSilenceRange(connection, word, true);
       keepGoing = false;  
     } else {
       nextPath = translatePickedConnectionSegmentToSilenceRange(connection, word);
     }
     if (nextPath.indexOf(null) === -1) {
-      // console.log(nextPath, "YUUPPPPPP");
       nextPath = drawRandomlyFromArray(nextPath);
       path = path.concat(nextPath);
       time = updateTime(time, nextPath, clipLengths);
-      //console.log(path, time);
       addUsedThings(connection, nextPath, usedSegments, usedClips, usedWords, word);
-      //console.log(usedWords);
       word = pickWordFromEndOfConnection(connection, usedWords);
     }
-    // from that list, pick a connection that you haven't used yet
-    // in the connections list, I should do the work I do later
-    // of translating to segments and checking that they have a connection
-    // of course that will change as clips get used, so I need to do this each time
-    // should filter list (and keep around) instead of picking immediately and moving on
-    // maybe should save the filtered lists in a dictionary?
-    // Or just do the work all over again?
-
-    // start = getNewStart(possibleList, word, usedClips);
-
-    // // a lot of this gets moved out of this while loop
-    // while (edgeList[word] && edgeList[word].length > 0 && typeof start !== 'undefined') {
-    //   // //console.log(path, word, clip, start, path.length, possibleList);
-    //   //console.log(path, path.length, time, usedClips);
-    //   clip = start[0];
-    //   segments = translateToSegments(clip, word);
-    //   segments = segments.filter(function (s) {
-    //     return makeSureClipSegmentHasConnection(s, word);
-    //   });
-    //   segment = drawRandomlyFromArray(segments);
-    //   // need to work on getting out of a clip that doesn't have a segment 
-    //   // //console.log(segments.length, segment);
-    //   if (segment) {
-    //     if (config.videoDuration - time <= 20)
-    //       silenceRange = getClosestSilenceRange(clip, segment, true);
-    //     else
-    //       silenceRange = getClosestSilenceRange(clip, segment);
-    //     path.push([word, clip, silenceRange]);
-    //     addUsedSegments(clip, silenceRange, usedSegments);
-    //     word = getNewWord(word, clip, segment, usedWords, usedClips);
-    //     // usedClips.push(clip);
-    //     clip = start[1][0];
-    //     //console.log(clip);
-    //     possibleList = edgeList[word];
-    //     start = getNewStart(possibleList, word, usedClips);  
-    //     //console.log(start);
-    //     time += silenceRange[1] - silenceRange[0];
-    //   }
-    // };
-    // // //console.log("HELLO", word, start);
-    // // need to check the current clip to get a new word;
-    // if (/*edgeList[word].length == 0 || */typeof start === 'undefined') {
-    //   word = allTheWords.pop(0);
-    //   if (!segment || typeof start === 'undefined')
-    //     word = word;
-    //   else {
-    //     // word = get
-    //   }
-    //   continue;
-    // }
 
   }
 
@@ -863,7 +789,7 @@ var createEdgeList = function (graph) {
   }
   return edges;
 };
-
+rawDataFiles = fs.readdirSync(config.rawDataDirectory);
 
 rawDataFiles.forEach(function (filename) {
 
@@ -915,17 +841,29 @@ try {
 populateGraph();
 edgeList = createEdgeList(graph);
 allTheWords = getAllTheWords(edgeList);
-favoredClips = getFavoredClips(favoredIdentifier);
+
+favoredClips = getFavoredClips(rawDataFiles, favoredIdentifier);
 
 // favoredWords = getFavoredWords(edgeList);
 // console.log(favoredWords, favoredClips);
 // console.log(favoredClips);
+usedWords = [];
+startSilences = filterSilencesByTime(allTheSilences, config.startMinTime, config.startMaxTime);
+favoredStartSilences = filterSilencesByFavored(startSilences, favoredClips);
+orderedStartSilences = orderStartSilencesByConnections(startSilences, edgeList, usedWords);
+filteredFavoredStartSilences = filterStartSilencesByConnections(favoredStartSilences, edgeList, usedWords);
 
-filtered = filterSilencesByTime(allTheSilences, config.startMinTime, config.startMaxTime);
-console.log(filtered);
-process.kill(process.pid);
 
-path = getPath("hello", allTheClips, edgeList);
+startWords = filteredFavoredStartSilences.length > 0 ? filteredFavoredStartSilences[0] : orderedStartSilences[0];
+startSilence = startSilences.filter(function (silenceItem) {
+  var clipIdentifier = silenceItem[0];
+  return clipIdentifier == startWords[0];
+});
+
+
+path = getPath(allTheClips, edgeList, startSilence[0], startWords);
+
+// path = getPath("hello", allTheClips, edgeList);
 
 console.log(path, time);
 path.forEach(function (item, i) {

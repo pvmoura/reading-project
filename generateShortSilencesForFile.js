@@ -5,7 +5,7 @@ var rawDataDir = config.rawDataDirectory;
 var files = [];
 var filename = process.argv[2], identifier, fullFilenameRawData, silencesWithTotalTime;
 var didLong = false, didShort = false;
-
+var PID = process.pid;
 if (typeof filename === 'undefined' || filename.split('.')[1] !== 'wav') {
 	console.log("Bad Filename -- either you didn't give me one or it wasn't a WAV file");
 	process.kill(PID);
@@ -30,12 +30,12 @@ var convertTimeToTimeStamp = function (time) {
 };
 
 
-var processShortSilence = function (filename, filenameInClips, range) {
+var processShortSilence = function (filename, filenameInClips, range, totalTime) {
   var output = config.shortSilencesDirectory + filename + '.mov';
-  var time = range[1] - range[0];
-  var command = '-i ' + DIR + filenameInClips + ".mov" + ' -c:v prores -profile:v 1 -ss ' + convertTimeToTimeStamp(range[0]) + ' -t ' + convertTimeToTimeStamp(time) + ' ' + output;
+  var time = (totalTime / 100).toFixed(2);
+  var command = '-i ' + config.videoFileDirectory + filenameInClips + ".mov" + ' -c:v prores -profile:v 1 -ss ' + range[0] + ' -t ' + time + ' ' + output;
   console.log(command);
-  var result = child.spawn('ffmpeg', command.split(' '));
+  var result = child.spawnSync('ffmpeg', command.split(' '));
   return result;
 };
 
@@ -59,9 +59,14 @@ if (fs.existsSync(fullFilenameRawData)) {
 		silencesWithTotalTime = [silencesWithTotalTime[0], silencesWithTotalTime.pop()];
 	}
 	silencesWithTotalTime.forEach(function (s) {
-		var totalTime = s[0];
-		processShortSilence(identifier + "__" + totalTime, identifier, s[1]);
+		var totalTime = s[0], range = s[1];
+		processShortSilence(identifier + "__" + totalTime, identifier, range, totalTime);
 	});
+	// fileData.shortSilences.forEach(function (s) {
+	// 	var totalTime = Math.round((s[1] - s[0]) * 100);
+	// 	console.log(identifier);
+	// 	processShortSilence(identifier + "__" + s[0] + "-" + s[1] + "__" + totalTime, identifier, s, totalTime);
+	// });
 	
 } else {
 	console.log("NO RAW DATA FOR FILE", fullFilenameRawData);
