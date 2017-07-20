@@ -2,13 +2,9 @@ var fs = require('fs');
 var config = JSON.parse(fs.readFileSync('config.json', 'utf8'));
 var mostCommonWords = JSON.parse(fs.readFileSync('most_common_words.json', 'utf-8'));
 mostCommonWords = mostCommonWords.map( function (word) { return word.toLowerCase(); } );
-var watsonTranscriber = require('./transcriber.js');
 var child = require('child_process');
-var files = fs.readdirSync(config.rawDataDirectory);
-var shortSilenceFiles = fs.readdirSync(config.shortSilencesDirectory);
+var rawDataFiles = fs.readdirSync(config.rawDataDirectory);
 var allTheLengths = {};
-var processedFiles = 0;
-var processed = 0, numToProcess = 0;
 var allData = {};
 var usedClips = [];
 var graph = {};
@@ -16,7 +12,7 @@ var time = 0;
 var todaysClips = [];
 var edgeList = [], allTheClips = [], allTheWords, usedSegments = {}, favoredClips = [];
 var startingSegments = {};
-var shortSilences = [];
+var shortSilences = [], allTheSilences = [];
 var favoredIdentifier = process.argv[2];
 if (typeof favoredIdentifier === 'undefined')
   favoredIdentifier = null;
@@ -32,6 +28,19 @@ Array.prototype.popByIndex = function (index) {
   this.pop();
   return val;
 };
+Array.prototype.isInArray = function (element) {
+  var indexOfElement = this.indexOf(element);
+  return indexOfElement !== -1;
+};
+Object.prototype.objectToItems = function () {
+  var items = [];
+  for (var key in this) {
+    if (this.hasOwnProperty(key))
+      items.push([key, this[key]]);
+  }
+  return items;
+};
+
 var getRandomInt = function (min, max) {
     return Math.floor(Math.random() * (max - min + 1)) + min;
 };
@@ -77,23 +86,23 @@ var getFavoredWords = function (edgeList) {
 
 var getAllTheWords = function (edgeList) {
   words = [];
-  for (var key in edgeList) {
-    if (edgeList.hasOwnProperty(key)) {
-      words.push([key, edgeList[key]]);
+  for (var edgeWord in edgeList) {
+    if (edgeList.hasOwnProperty(edgeWord)) {
+      words.push([edgeWord, edgeList[edgeWord]]);
     }
   }
+
   words.sort(function (a, b) {
-    if (a[1].length < b[1].length)
-      return 1;
-    else if (a[1].length > b[1].length)
-      return -1;
-    else
-      return 0;
+    if (a[1].length < b[1].length) return 1;
+    else if (a[1].length > b[1].length) return -1;
+    else return 0;
   });
+
   return words.map(function (w) { return w[0]; });
-}
-var getFavoredClips = function () {
-  favoredClips = files.map(function (f) {
+};
+
+var getFavoredClips = function (favoredIdentifier) {
+  var favoredClips = rawDataFiles.map(function (f) {
     return f.split('.')[0];
   });
   favoredClips = favoredClips.filter(function (f) {
@@ -101,36 +110,8 @@ var getFavoredClips = function () {
       return false;
     return f.indexOf(favoredIdentifier) !== -1;
   });
+  return favoredClips;
 }
-var makeSilencesOutro = function (usedClips) {
-  var total = 0;
-  var unUsedPeople = shortSilenceFiles.filter(function (s) {
-    var identifier = s.split('.')[0];
-    return usedClips.indexOf(identifier) === -1 && favoredClips.indexOf(identifier) !== -1;
-  });
-  var fd = fs.openSync('concat_silences.txt', 'w');
-  favoredClips.forEach(function(f) {
-    fs.writeSync(fd, "file '" + config.shortSilencesDirectory + f + ".mov\n");
-    total++;
-  });
-  
-  // for (var i = 0, len = unUsedPeople.length; i < len; i++) {
-  //   fs.writeSync(fd, "file '" + config.shortSilencesDirectory + unUsedPeople[i] + "'\n");
-  // }
-
-  var filtered = shortSilenceFiles.filter(function (s) {
-    var identifier = s.split('.')[0];
-    return usedClips.indexOf(identifier) === -1 && unUsedPeople.indexOf(identifier) === -1;
-  });
-  while (total < 18) {
-    var shortSilenceClip = drawRandomlyFromArray(filtered);
-    if (typeof shortSilenceClip !== 'undefined')
-      fs.writeSync(fd, "file '" + config.shortSilencesDirectory + shortSilenceClip + "'\n");
-    total++;
-  }
-  fs.closeSync(fd);
-  return;
-};
 
 var getAllLengths = function (clips) {
   clips.forEach(function (clip) {
@@ -189,14 +170,6 @@ var makeVideo = function () {
   var command = '-f concat -safe 0 -i concat_list.txt -c copy ' + outputFilename;
   child.spawnSync('ffmpeg', command.split(' '));
   return outputFilename;
-};
-
-var makeSilencesOutroClip = function () {
-  var outputFilename = config.outputDirectory + 'outro.mov';
-  var command = '-f concat -safe 0 -i concat_silences.txt -c copy ' + outputFilename;
-  console.log(command);
-  child.spawnSync('ffmpeg', command.split(' '));
-  return outputFilename
 };
 
 var filterUndesirableWords = function (words, usedWords, halve) {
@@ -498,37 +471,54 @@ var translateToSegments = function (clip, word, range) {
   });
 };
 
-var getStartingSegments = function () {
-  var hack = true;
-  for (var key in allData) {
-    // console.log(key);
-    if (allData.hasOwnProperty(key) && favoredClips.indexOf(key) !== -1) {
-      // if (favoredClips.length > 0 && favoredClips.indexOf(key) === -1) {
-      //   continue;
-      // }
-      console.log(key);
-      var silences = allData[key].silences;
-      console.log(silences);
-      var totalTime = 0, last = 0;
-      var newSilence = [[0, 0]];
-      silences.forEach(function (s) {
-        if (totalTime < config.startTime)
-          newSilence.push(s)
-        totalTime += s[1] - last;
-        last = s[1];
-      });
-      // console.log(newSilence);
-      newSilence = reduceToStartAndEndPoints(newSilence);
-      totalTime = newSilence[1] - newSilence[0];
-      if (typeof startingSegments[key] === 'undefined') {// && silences.length == 2 && hack) { //&& totalTime >= config.segmentMinTime && totalTime <= config.segmentMaxTime) {
-        // newSilence.push(silences[1]);
-        startingSegments[key] = newSilence;
-        // hack = false;
-      }
+var getFavoredStartingSegments =  function (allData, favoredClips, allTheSilences) {
+  var startingSegments = {}, favoredStarts = {}, s;
+  silenceItems = allTheSilences.objectToItems();
+  silenceItems.forEach(function (silenceItem) {
+    var clipIdentifier = silenceItem[0], silenceInClip = silenceItem[1];
+    if (favoredClips.isInArray(clipIdentifier)) {
+      favoredStarts[clipIdentifier] = silenceInClip;
     }
-  }
-
+  });
+  return favoredStartingSegments;
 };
+
+var filterSilencesByFavored = function (allTheSilences, favoredClips) {
+  return allTheSilences.filter(function (silenceItem) {
+    var clipIdentifier = silenceItem[0];
+    return favoredClips.isInArray(clipIdentifier);
+  });
+};
+
+var filterSilencesByTime = function (allTheSilences, startMinTime, startMaxTime) {
+  return allTheSilences.map(function (silenceItem) {
+    var clipIdentifier = silenceItem[0], silences = silenceItem[1];
+    return [ clipIdentifier, filterSilenceArrayByStartAndEnd(silences, 0, startMinTime, startMaxTime) ];
+  });
+};
+
+var filterSilenceArrayByStartAndEnd = function(silenceArray, startTime, minLength, maxLength) {
+  var filteredSilenceArray = filterSilenceArrayByStartTime(silenceArray, startTime);
+  console.log(filteredSilenceArray);
+  filteredSilenceArray = filterSilenceArrayByEndTime(filteredSilenceArray, 1000);
+  console.log(filteredSilenceArray);
+  process.kill(process.pid);
+  return filteredSilenceArray;
+};
+
+var filterSilenceArrayByStartTime = function (silenceArray, startTime) {
+  return silenceArray = silenceArray.filter(function (silencePeriod) {
+    var start = silencePeriod[0], end = silencePeriod[1];
+    return start >= startTime;
+  });
+}
+
+var filterSilenceArrayByEndTime = function (silenceArray, endTime) {
+  return silenceArray = silenceArray.filter(function (silencePeriod) {
+    var start = silencePeriod[0], end = silencePeriod[1];
+    return end <= endTime;
+  });
+}
 
 var drawFromTodaysClips = function (possibleList, favoredClips, usedClips) {
   var temp = possibleList.filter(function (connection) {
@@ -858,20 +848,16 @@ var getPath = function (word, allTheClips, edgeList) {
 };
 var createEdgeList = function (graph) {
   var edges = {};
-  for (var start in graph) {
-    if (graph.hasOwnProperty(start)) {
-      for (var edge in graph[start]) {
-        if (typeof edges[edge] === 'undefined')
-          edges[edge] = [];
-        graph[start][edge].forEach(function (end) {
-          // var inThere = false;
-          // edges[edge].forEach(function (e) {
-          //   if ((e[0] != start && e[1] != end) || (e[1] != start && e[0] != end))
-          //     inThere = true;
-          // });
-          // if (!inThere)
-            edges[edge].push([start, end]);
-        });
+  for (var startClip in graph) {
+    if (graph.hasOwnProperty(startClip)) {
+      for (var edgeWord in graph[startClip]) {
+        if (graph[startClip].hasOwnProperty(edgeWord)) {
+          if (typeof edges[edgeWord] === 'undefined')
+            edges[edgeWord] = [];
+          graph[startClip][edgeWord].forEach(function (endClip) {
+              edges[edgeWord].push([startClip, endClip]);
+          });
+        }
       }
     }
   }
@@ -879,43 +865,28 @@ var createEdgeList = function (graph) {
 };
 
 
-files.forEach(function (filename) {
-  // var transcriber,
-  //   options = {
-  //     dir: config.dir,
-  //     restart: true,
-  //     filename: filename
-  //   };
-  // if (filename.split('.')[1] === 'wav') {
-  //   transcriber = watsonTranscriber.createTranscriber(options, callback);
-  //   transcriber.startTranscription();
-  //   transcriber.watsonObj.on('watsonClose', function () {
-  //     processedFiles++;
-  //   });
-  //   fs.createReadStream(config.soundFileDirectory + '/' + filename).pipe(transcriber.watsonObj);
-  // }
-  var soundFile, rankedSoundFile = [], identifier = filename.split('.')[0];
+rawDataFiles.forEach(function (filename) {
+
+  var soundFile, identifier = filename.split('.')[0];
   if (filename.split('.')[1] === 'json') {
-    numToProcess++;
-    // silences.stdin.write(config.waveFileDirectory + identifier + '.wav\n');
     try {
       soundFile = JSON.parse(fs.readFileSync(config.transcriptsDirectory + identifier + '.json'), 'utf-8');
       var dataFile = JSON.parse(fs.readFileSync(config.rawDataDirectory + filename), 'utf-8');
 
-    // //console.log(allData, config.transcriptsDirectory, identifier, soundFile, dataFile);
     if (dataFile && !dataFile.portrait && fs.existsSync(config.videoFileDirectory + identifier + '.mov')) {
       if (typeof allData[identifier] === 'undefined')
         allData[identifier] = dataFile;
-    
+
       allData[identifier]['rawWatsonData'] = soundFile;
       allData[identifier]['combinedWatson'] = combineTranscript(soundFile);
       allTheClips.push(identifier);
       allTheLengths[dataFile.filename] = dataFile.fileLength;
+      allTheSilences.push([ identifier, allData[identifier]['silences'] ]);
     } else {
       console.log(identifier, "wasn't in video directory");
     }
     } catch (e) {
-      //console.log(e);
+
     }
 
   }
@@ -928,74 +899,39 @@ var cleanup = function (finalOutput) {
       fs.unlinkSync(config.tempDirectory + v);
     });
     try {
-      fs.unlinkSync('./concat_list.txt'); 
-      fs.unlinkSync('./concat_silences.txt'); 
+      fs.unlinkSync('./concat_list.txt');
     } catch (err) {
       console.log("concat file doesn't exist");
     }
   } else {
-    console.log("\x1b[31m\x1b[40m", "Not deleting temp files because the final video wasn't made. Please manually concatenate the videos.", "\x1b[0m");
+    console.log("\x1b[31m\x1b[40m", "Not deleting temp rawDataFiles because the final video wasn't made. Please manually concatenate the videos.", "\x1b[0m");
   }
 };
 try {
   fs.unlinkSync('./concat_list.txt');
-  fs.unlinkSync('./concat_silences.txt');
 } catch (err) {
-  console.log(err);
+
 }
 populateGraph();
 edgeList = createEdgeList(graph);
 allTheWords = getAllTheWords(edgeList);
-getFavoredClips();
-favoredWords = getFavoredWords(edgeList);
+favoredClips = getFavoredClips(favoredIdentifier);
+
+// favoredWords = getFavoredWords(edgeList);
 // console.log(favoredWords, favoredClips);
-console.log(favoredClips);
-// silences.kill();
-getStartingSegments();
-console.log(startingSegments);
-// getEndingSegments();
-// writeUpWords("wordCounts");
-// ////(endingSegments);
-// wordCounts = {};
-// wordInFiles = {};
-// populateGraph();
+// console.log(favoredClips);
 
-// for (var key in startingSegments) {
-//   if (startingSegments.hasOwnProperty(key)) {
-//     var segment = startingSegments[key];
-//     var words = getWordsFromRange(key, segment);
-//     var countedWords = countWords(words);
-//     countWordFiles(words, key);
-//     //////(wordInFiles);
-//   }
-// }
-// writeUpWords("startingWordCounts");
-// // makeClipWithSilences();
+filtered = filterSilencesByTime(allTheSilences, config.startMinTime, config.startMaxTime);
+console.log(filtered);
+process.kill(process.pid);
 
-// path = getPath("hello", allTheClips, edgeList);
-// console.log(path, time);
-// path.forEach(function (item, i) {
-//   console.log(item);
-//   // processClip(item[1], item[2], i);
-// });
-
-
-// usedClips = [];
 path = getPath("hello", allTheClips, edgeList);
 
-console.log(path, "HELLLLLLLLO", time);
+console.log(path, time);
 path.forEach(function (item, i) {
   console.log(item);
   processClip(item[1], item[2], i);
 });
 var finalOutput = makeVideo();
-// makeSilencesOutro(usedClips);
-// var outroOutput = makeSilencesOutroClip();
+
 // cleanup(finalOutput, outroOutput);
-  // var fd = fs.openSync('graph.txt', 'w');
-  // fs.writeSync(fd, JSON.stringify(graph));
-  // fs.closeSync(fd);
-  // var fd = fs.openSync('edgeList.txt', 'w');
-  // fs.writeSync(fd, JSON.stringify(edgeList));
-  // fs.closeSync(fd);
-  // edgeList['love'], "HELLLLLO");
