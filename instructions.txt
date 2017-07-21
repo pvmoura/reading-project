@@ -1,0 +1,28 @@
+QUIT: CTRL-C
+
+TO CHECK EVERYTHING IS WORKING
+
+type: pwd
+should see:
+/Users/readingspeaks/reading-production
+
+type: ENV | grep watson
+should see:
+watsonSpeechUser="f73270f5-b64f-4cb4-8c1c-eb4e8dc6274c"
+watsonSpeechPass="5ByNvCbQwUEJ"
+
+BEFORE STARTING INTERVIEWS
+type: node ingest.js
+should see:
+STARTED WATCHING <FOLDER> (<FOLDER> is whatever waveFileDirectory in config.json)
+
+when you drop WAV files into <FOLDER> should see:
+PROCESSING FILE <FILE>
+
+when it's done transcribing should see:
+FINISHED TRANSCRIBING <FILE>
+
+If you see that the cursor is on the command line again (not on left edge of terminal), rerun node ingest.js
+
+TO CREATE OUTRO CLIP:
+node outro.js <IDENTIFIER> <#OFCLIPS> (optional)

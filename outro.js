@@ -102,6 +102,7 @@ var makeSilencesOutro = function () {
     return favoredClips.indexOf(identifier) === -1;
   });
   while (total < numberOfClips && filtered.length > 0) {
+    console.log(filtered);
     var shortSilenceClip = filtered.popByIndex(getRandomInt(0, filtered.length - 1));
     if (shortSilenceClip !== null) {
       result = addSilenceFileToConcatFile(shortSilenceClip, longsUsed, fd, total);
@@ -127,7 +128,7 @@ if (favoredClips.length == 0) {
   process.kill(process.pid);
 }
 favoredClips.forEach(function (filename) {
-  child.spawnSync('node', ['./generateShortSilencesForFile.js', filename + ".wav"]);
+  // child.spawnSync('node', ['./generateShortSilencesForFile.js', filename + ".wav"]);
 });
 makeSilencesOutro();
 makeSilencesOutroClip();

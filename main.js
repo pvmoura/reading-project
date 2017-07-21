@@ -119,7 +119,29 @@ var getFavoredClips = function (rawDataFiles, favoredIdentifier) {
     return f.indexOf(favoredIdentifier) !== -1;
   });
   return favoredClips;
-}
+};
+
+var orderASCBySilenceDistance = function (a, b) {
+  var clipA = a[0], clipB = b[0];
+  var wordStampA = a[1][2], wordStampB = b[1][2];
+  var silenceDistanceA = filterSilenceArrayByStartTime(allData[clipA].silences, wordStampA);
+  if (silenceDistanceA.length > 0)
+    silenceDistanceA = silenceDistanceA[0][0] - wordStampA;
+  else
+    silenceDistanceA = allTheLengths[clipA] - wordStampA;
+  var silenceDistanceB = filterSilenceArrayByStartTime(allData[clipB].silences, wordStampB);
+  if (silenceDistanceB.length > 0)
+    silenceDistanceB = silenceDistanceB[0][0] - wordStampB;
+  else
+    silenceDistanceB = allTheLengths[clipB] - wordStampB;
+
+  if (silenceDistanceA < silenceDistanceB)
+    return -1;
+  else if (silenceDistanceA > silenceDistanceB)
+    return 1;
+  else
+    return 0;
+};
 
 var getAllLengths = function (clips) {
   clips.forEach(function (clip) {
@@ -180,25 +202,42 @@ var makeVideo = function () {
   return outputFilename;
 };
 
+var getWordFromWordTimeStamp = function (wordTimeStamp) {
+  return wordTimeStamp[0];
+};
+
+var getLowerCaseWordFromWordTimeStamp = function (wordTimeStamp) {
+  return wordTimeStamp[0].toLowerCase();
+};
+
+var convertWordTimeStampsToLowerCaseWords = function (wordTimeStamps) {
+  return wordTimeStamps.map(function (wt) {
+    var w = wt[0];
+    return w.toLowerCase();
+  })
+}
+
 var filterUndesirableWords = function (words, usedWords, halve) {
-  if (halve !== false)
-    halve = true;
-  words = words.map(function (w) {
-    return w[0];
-  });
-  words = words.map( function (w) { return w.toLowerCase(); });
+  // if (halve !== false)
+    // halve = true;
+  // words = words.map(function (w) {
+  //   return w[0];
+  // });
+  // words = words.map( function (w) { return w.toLowerCase(); });
   words = words.filter(function (w) {
-    return mostCommonWords.indexOf(w) === -1 && w.indexOf("\'") === -1 && w != '%hesitation' && edgeList[w].length > 0;
+    w = getLowerCaseWordFromWordTimeStamp(w);
+    return !mostCommonWords.isInArray(w) && w.indexOf("\'") === -1 && w != '%hesitation' && edgeList[w].length > 0;
   });
   words = words.filter(function (w) {
+    w = getLowerCaseWordFromWordTimeStamp(w);
     var temp = usedWords.filter(function (u) {
       return w == u;
     });
     return temp.length <= 2;
   });
   // filter by words in the word counts
-  if (halve)
-    words = words.slice(words.length / 2);
+  // if (halve)
+  //   words = words.slice(words.length / 2);
   return words;
   
 };
@@ -300,13 +339,36 @@ var orderByConnections = function (wordList) {
 // You don't just pick a 
 // should I include an analysis that places the distance of a word to a silence?
 
-var makeSureClipSegmentHasConnection = function (wordsInSegment, word, usedWords) {
-  var temp = filterUndesirableWords(wordsInSegment, usedWords);
+
+var getConnectedWords = function (wordsInSegment, word, usedWords, minLength) {
+  var start, totalTime = wordsInSegment[wordsInSegment.length - 1][2] - wordsInSegment[0][2];
+  if (typeof minLength !== 'undefined' && totalTime > minLength) {
+    start = wordsInSegment[0][2];
+    // console.log(start, wordsInSegment);
+    temp = wordsInSegment.filter(function (s) {
+      return s[2] - start > minLength;
+    });
+  } else {
+    temp = wordsInSegment.filter( function (w) { return true; } );
+  }
+  // console.log(temp, "TEMP");
+  var temp = filterUndesirableWords(temp, usedWords);
+
   temp = temp.filter(function (w) {
-    return w != word && edgeList[w].length // in here I should probably include the used clips;
+    w = getLowerCaseWordFromWordTimeStamp(w);
+    wantSameWord = w != word;
+    if (minLength > 5)
+      wantSameWord = true;
+    return wantSameWord && edgeList[w].length; // in here I should probably include the used clips;
   });
+  return temp;
+};
+
+var makeSureClipSegmentHasConnection = function (wordsInSegment, word, usedWords, minLength) {
+  var temp = getConnectedWords(wordsInSegment, word, usedWords, minLength);
   return temp.length > 0;
 };
+
 
 
 
@@ -361,6 +423,7 @@ var getNewWord = function (word, clip, segment, usedWords, usedClips) {
   // usedWords.push(word);
   usedClips.push(clip);
   segment = filterUndesirableWords(segment);
+  segment = convertWordTimeStampsToLowerCaseWords(segment);
   segment = orderByConnections(segment);
   // segment = segment.filter(function (w) {
   //   return usedWords.indexOf(w) === -1;
@@ -404,8 +467,6 @@ var filterConnectionsListByUsedClips = function (possibleConnections, usedClips)
 var filterConnectionsListByTodaysClips = function (possibleList, favoredClips) {
   return possibleList.filter(function (connection) {
     var start = connection[0], end = connection[1];
-    // //console.log(favoredClips, favoredClips.indexOf(start), start, favoredClips.indexOf(end), end);
-    // process.kill(process.pid);
     return favoredClips.indexOf(start) !== -1 || favoredClips.indexOf(end) !== -1;
   });
 };
@@ -420,15 +481,17 @@ var filterConnectionsListByFeatured = function (possibleList) {
 }
 
 
-var filterConnectionsSegmentsByFutureConnection = function (possibleSegments, word, usedWords) {
+var filterConnectionsSegmentsByFutureConnection = function (possibleSegments, word, usedWords, minLength) {
   return possibleSegments.filter(function (connection) {
     var start = connection[0], end = connection[1], out = [];
     if (typeof end[1] === 'undefined')
       return false;
     end = end[1];
-    return end.filter(function (e) {
-      return makeSureClipSegmentHasConnection(e, word, usedWords);
+    // console.log(end);
+    end = end.filter(function (e) {
+      return makeSureClipSegmentHasConnection(e, word, usedWords, minLength);
     });
+    return end;
   });
 };
 
@@ -546,6 +609,7 @@ var pickWordFromEndOfConnection = function (connection, usedWords) {
   var segment = end[1];
   if (typeof segment === 'undefined') return null;
   segment = filterUndesirableWords(segment, usedWords);
+  segment = convertWordTimeStampsToLowerCaseWords(segment);
   segment = orderByConnections(segment);
 
   word = segment[0];
@@ -560,16 +624,23 @@ var pickRandomConnectionSegment = function (connection, word) {
   return [ [ start[0], startSegment ], [ end[0], endSegment ] ];
 };
 var translatePickedConnectionSegmentToSilenceRange = function (connectionSegment, word, goToEnd) {
-  //console.log(connectionSegment);
   return connectionSegment.map(function (c) {
     var start = connectionSegment[0], end = connectionSegment[1],
         startSilences = getClosestSilenceRange(start[0], start[1]),
         endSilences = getClosestSilenceRange(end[0], end[1], goToEnd);
-    console.log(endSilences, startSilences);
     if (startSilences === null || endSilences === null)
       return null;
+    // console.log([ [word, start[0], startSilences ], [ word, end[0], endSilences ] ]);
+    // process.kill(process.pid);
     return [ [word, start[0], startSilences ], [ word, end[0], endSilences ] ]
   });
+};
+
+var generateNextPath = function (connectionSegment, word, goToEnd) {
+  return connectionSegment.map(function (c) {
+    var start = connectionSegment[0], end = connectionSegment[1],
+      startSilences = getSilenceRange(start[1][0], start[1][start.length - 1], start[0]);
+  })
 };
 var updateTime = function (time, nextPath, clipLengths) {
   var start = nextPath[0], end = nextPath[1];
@@ -605,6 +676,7 @@ var orderStartSilencesByConnections = function (startSilences, edgeList, usedWor
     var range = reduceToStartAndEndPoints(silences), words;
     words = getWordsFromRange(clipIdentifier, range);
     words = filterUndesirableWords(words, usedWords);
+    words = convertWordTimeStampsToLowerCaseWords(words);
     words = orderByConnections(words);
     return [ clipIdentifier, words ];
   });
@@ -618,6 +690,7 @@ var filterStartSilencesByConnections = function (startSilences, edgeList, usedWo
     var range = reduceToStartAndEndPoints(silences), words;
     words = getWordsFromRange(clipIdentifier, range);
     words = filterUndesirableWords(words, usedWords);
+    words = convertWordTimeStampsToLowerCaseWords(words);
     words = orderByConnections(words);
     if (words.length > 0)
       return [ clipIdentifier, words ];
@@ -652,7 +725,29 @@ var lastFiveWereShort = function (clipLengths) {
     if (a < config.segmentMaxTime) return true;
   });
   return lastFive.length >= 8;
-}
+};
+
+var getSilenceRange = function (inWordTimeStamp, outWordTimeStamp, clip) {
+  var silences = allData[clip].silences;
+  var inStamp = inWordTimeStamp[1];
+  var outStamp = outWordTimeStamp[2];
+  var filteredBeforeStart = filterSilenceArrayByEndTime(silences, inStamp);
+  var filteredAfterEnd = filterSilenceArrayByStartTime(silences, outStamp);
+  if (filteredBeforeStart.length == 0)
+    start = 0;
+  else {
+    start = filteredBeforeStart.pop();
+    start = getMiddleOfSilence(start);
+  }
+  if (filteredAfterEnd.length > 0) {
+    end = filteredAfterEnd.shift();
+    end = getMiddleOfSilence(end);
+  }
+  else
+    end = allTheLengths[clip];
+
+  return [ start, end ];
+};
 
 // from that list, pick a connection that you haven't used yet
 // in the connections list, I should do the work I do later
@@ -666,7 +761,7 @@ var getPath = function (allTheClips, edgeList, startSilences, startWords) {
   var path = [], usedSegments = [], ordered = [], segment, possibleList = [], start = true, clip, wordsInSegment, wordsTimestamps, usedWords = [], counter = 0;
   var featured;
   var clipLengths = [], usedSilences = [], keepGoing = true, favor = true;
-  var alreadyFeatured = 0;
+  var alreadyFeatured = 0, nextWords = [];
   
   while (time < config.videoDuration && keepGoing) {
     if (start) {
@@ -681,11 +776,21 @@ var getPath = function (allTheClips, edgeList, startSilences, startWords) {
       time = updateTimeWithOneClip(time, nextPath, clipLengths);
       word = segment[0];
       start = false;
+    } else {
+      // console.log(word, nextWords, "WORD");
+      word = nextWords.shift();
+      if (typeof word !== 'undefined')
+        word = word[1][0];
+      while (typeof edgeList[word] === 'undefined' && nextWords.length > 0) {
+        word = nextWords.shift()[0];
+      }
     }
     possibleList = edgeList[word];
     
     if (typeof possibleList === 'undefined') {
+
       word = allTheWords.popByIndex(0);
+      console.log("PICKING NEW WORD");
       continue;
     }
 
@@ -701,7 +806,7 @@ var getPath = function (allTheClips, edgeList, startSilences, startWords) {
         featured = filterConnectionsListByFeatured(possibleList);
         if (featured.length > 0) {
           featured = translateConnectionsToSegments(possibleList, word, config.featuredTime);
-          featured = filterConnectionsSegmentsByFutureConnection(possibleList, word, usedWords);
+          featured = filterConnectionsSegmentsByFutureConnection(possibleList, word, usedWords, config.segmentMinTime);
         }
       }
       // featured = false;
@@ -710,9 +815,11 @@ var getPath = function (allTheClips, edgeList, startSilences, startWords) {
         if (favor) {
           possibleList = filterConnectionsListByTodaysClips(possibleList, favoredClips);
         }
+        // change to run logic, get rid of filtering by silences
         possibleList = filterConnectionsListByManySilences(possibleList);
-        possibleList = translateConnectionsToSegments(possibleList, word, config.segmentMinTime);
-        futureConnections = filterConnectionsSegmentsByFutureConnection(possibleList, word, usedWords);
+        possibleList = translateConnectionsToSegments(possibleList, word, config.segmentMaxTime);
+
+        futureConnections = filterConnectionsSegmentsByFutureConnection(possibleList, word, usedWords, config.segmentMinTime);
 
 
         if (futureConnections.length == 0) {
@@ -746,27 +853,50 @@ var getPath = function (allTheClips, edgeList, startSilences, startWords) {
 
     // possibleList = filterOutErrors(possibleList);
     // connection = drawRandomlyFromArray(possibleList);
-    connection = drawFromTodaysClips(possibleList, favoredClips, usedClips);
+    connectionSegment = drawFromTodaysClips(possibleList, favoredClips, usedClips);
     
-    if (!connection) {
-      connection = drawRandomlyFromArray(possibleList);
+    if (!connectionSegment) {
+      connectionSegment = drawRandomlyFromArray(possibleList);
     }
-    connection = pickRandomConnectionSegment(connection, word);
+    connection = pickRandomConnectionSegment(connectionSegment, word);
+    // console.log(connection[0]);
+    // process.kill(process.pid);
+    endSegmentWords = connection[1][1];
 
-    // console.log(connection);
-    if (config.videoDuration - time <= 20) {
-      nextPath = translatePickedConnectionSegmentToSilenceRange(connection, word, true);
-      keepGoing = false;  
+    nextWords = getConnectedWords(endSegmentWords, word, usedWords, config.segmentMinTime);
+    nextWords = nextWords.map(function (wt) {
+      return [ connection[1][0], wt ];
+    });
+
+    nextWords.sort(orderASCBySilenceDistance);
+    if (nextWords.length > 0) {
+      nextWord = nextWords[0];
     } else {
-      nextPath = translatePickedConnectionSegmentToSilenceRange(connection, word);
+      console.log("WHAT IS GOING ON");
+      console.log(connection, endSegmentWords, nextWords, "ERRORED OUT");
+      process.kill(process.pid);
+      continue;
     }
-    if (nextPath.indexOf(null) === -1) {
-      nextPath = drawRandomlyFromArray(nextPath);
+    console.log(nextWords);
+    endRange = getSilenceRange(connection[1][1][0], nextWord[1], connection[1][0]);
+    startRange = getSilenceRange(connection[0][1][0], connection[0][1].pop(), connection[0][0]);
+    nextPath = [ [ word, connection[0][0], startRange], [ word, connection[1][0], endRange ] ];
+    // process.kill(process.pid);
+    // next thing is to pick the closest silence to nextWord
+    // console.log(connection);
+    // if (config.videoDuration - time <= 20) {
+    //   nextPath = translatePickedConnectionSegmentToSilenceRange(connection, word, true);
+    //   keepGoing = false;  
+    // } else {
+    //   nextPath = translatePickedConnectionSegmentToSilenceRange(connection, word);
+    // }
+    // if (nextPath.indexOf(null) === -1) {
+      // nextPath = drawRandomlyFromArray(nextPath);
       path = path.concat(nextPath);
       time = updateTime(time, nextPath, clipLengths);
       addUsedThings(connection, nextPath, usedSegments, usedClips, usedWords, word);
-      word = pickWordFromEndOfConnection(connection, usedWords);
-    }
+      // word = pickWordFromEndOfConnection(connection, usedWords);
+    
 
   }
 
@@ -853,13 +983,11 @@ favoredStartSilences = filterSilencesByFavored(startSilences, favoredClips);
 orderedStartSilences = orderStartSilencesByConnections(startSilences, edgeList, usedWords);
 filteredFavoredStartSilences = filterStartSilencesByConnections(favoredStartSilences, edgeList, usedWords);
 
-
-startWords = filteredFavoredStartSilences.length > 0 ? filteredFavoredStartSilences[0] : orderedStartSilences[0];
+startWords = filteredFavoredStartSilences.length > 0 ? drawRandomlyFromArray(filteredFavoredStartSilences) : drawRandomlyFromArray(orderedStartSilences);
 startSilence = startSilences.filter(function (silenceItem) {
   var clipIdentifier = silenceItem[0];
   return clipIdentifier == startWords[0];
 });
-
 
 path = getPath(allTheClips, edgeList, startSilence[0], startWords);
 
