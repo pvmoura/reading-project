@@ -337,7 +337,7 @@ var getClosestSilenceRange = function (clip, wordTimestamps, goToEnd) {
 
   var endSilence = endSilences[0];
   if (typeof endSilence === 'undefined') endSilence = allTheLengths[clip];
-  else if (goToEnd) endSilence = allTheLengths[clip];
+  else if (goToEnd || clip.indexOf('C') !== -1) endSilence = allTheLengths[clip];
   else endSilence = getMiddleOfSilence(endSilence);
   // //console.log(silences, start, end, startSilences, endSilences, startSilence, endSilence, "HELLLLLO");
   return [startSilence, endSilence];
@@ -562,9 +562,14 @@ var pickRandomConnectionSegment = function (connection, word) {
 var translatePickedConnectionSegmentToSilenceRange = function (connectionSegment, word, goToEnd) {
   //console.log(connectionSegment);
   return connectionSegment.map(function (c) {
+    console.log(connectionSegment[0], connectionSegment[1]);
     var start = connectionSegment[0], end = connectionSegment[1],
         startSilences = getClosestSilenceRange(start[0], start[1]),
         endSilences = getClosestSilenceRange(end[0], end[1], goToEnd);
+        // startInWordTimeStamp = start[1][0], startOutWordTimeStamp = start[start.length - 1][0],
+        // startSilences = getSilenceRange(startInWordTimeStamp, startOutWordTimeStamp, start[0], goToEnd),
+        // endInWordTimeStamp = end[1][0], endOutWordTimeStamp = end[end.length - 1][0],
+        // endSilences = getSilenceRange(endInWordTimeStamp, endOutWordTimeStamp, end[0], goToEnd);
     console.log(endSilences, startSilences);
     if (startSilences === null || endSilences === null)
       return null;
@@ -652,7 +657,30 @@ var lastFiveWereShort = function (clipLengths) {
     if (a < config.segmentMaxTime) return true;
   });
   return lastFive.length >= 8;
-}
+};
+
+var getSilenceRange = function (inWordTimeStamp, outWordTimeStamp, clip, goToEnd) {
+  var silences = allData[clip].silences;
+  var inStamp = inWordTimeStamp[1];
+  var outStamp = outWordTimeStamp[2];
+  var filteredBeforeStart = filterSilenceArrayByEndTime(silences, inStamp);
+  var filteredAfterEnd = filterSilenceArrayByStartTime(silences, outStamp);
+  if (filteredBeforeStart.length == 0)
+    start = 0;
+  else {
+    start = filteredBeforeStart.pop();
+    start = getMiddleOfSilence(start);
+  }
+  if (filteredAfterEnd.length > 0 && clip.indexOf('C') !== -1 && !goToEnd) {
+    end = filteredAfterEnd.shift();
+    end = getMiddleOfSilence(end);
+  }
+  else
+    end = allTheLengths[clip];
+
+  return [ start, end ];
+};
+
 
 // from that list, pick a connection that you haven't used yet
 // in the connections list, I should do the work I do later
@@ -706,7 +734,7 @@ var getPath = function (allTheClips, edgeList, startSilences, startWords) {
       }
       // featured = false;
       // console.log(featured, possibleList.length)
-      if (path.length < 3 || !featured || featured.length == 0 || alreadyFeatured > 2) {
+      if (path.length < 3 || !featured || featured.length == 0 || alreadyFeatured > 5) {
         if (favor) {
           possibleList = filterConnectionsListByTodaysClips(possibleList, favoredClips);
         }
