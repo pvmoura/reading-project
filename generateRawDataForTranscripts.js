@@ -6,8 +6,11 @@ var soundFilesDir = config.waveFileDirectory;
 var files = [];
 files = fs.readdirSync(soundFilesDir);
 files.forEach(function (filename) {
-	console.log(filename);
+	// console.log(filename);
 	child.spawn('node', ['./processSilencesAndShortSilences.js', filename]);
-	// child.spawn('node', ['./singleFileWatsonTranscription.js', filename]);
-	child.spawnSync('node', ['./generateShortSilencesForFile.js', filename]);
+	// if (!fs.existsSync(config.transcriptsDirectory + filename.split('.')[0] + '.json') && filename.split('.')[1] === 'wav') {
+	// 	child.spawn('node', ['./singleFileWatsonTranscription.js', filename]);
+	// 	console.log("PROCESSING", filename);
+	// }
+	// child.spawnSync('node', ['./generateShortSilencesForFile.js', filename]);
 });

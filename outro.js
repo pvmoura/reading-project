@@ -3,7 +3,6 @@ var child = require('child_process');
 var config = JSON.parse(fs.readFileSync('config.json', 'utf8'));
 var today = process.argv[2];
 var numberOfClips = process.argv[3];
-console.log(numberOfClips);
 var files = fs.readdirSync(config.rawDataDirectory);
 var shortSilenceFiles = fs.readdirSync(config.shortSilencesDirectory);
 if (typeof today === 'undefined') {
@@ -60,28 +59,26 @@ var drawRandomlyFromArray = function (arr) {
 };
 
 var addSilenceFileToConcatFile = function (identifier, longsUsed, fileDescriptor, total) {
-  var lengths = [], length;
-  possibleClips = shortSilenceFiles.filter(function(sf) {
+  var clipToUse, possibleClips = shortSilenceFiles.filter(function(sf) {
     return sf.indexOf(identifier) !== -1;
   });
   if (possibleClips.length > 0) {
-    lengths = possibleClips.map(function (sf) {
-      sf = sf.split('.')[0];
-      length = sf.split('__')[1];
-      return parseInt(length, 10);
+    possibleClips.sort(function (a, b) {
+      var splitFileA = a.split('.')[0], splitFileB = b.split('.')[0];
+      var lengthA = parseInt(splitFileA.split('__')[1], 10), lengthB = parseInt(splitFileB.split('__')[1], 10);
+      if (lengthA < lengthB) return 1;
+      else if (lengthA > lengthB) return -1;
+      else return 0;
     });
-    console.log(possibleClips, identifier, lengths);
-    lengths.sort();
+
     if (longsUsed < 2) {
-      length = lengths[0];
+      clipToUse = possibleClips[0];
       longsUsed++;
     } else {
-      length = lengths[lengths.length - 1];
+      clipToUse = possibleClips[possibleClips.length - 1];
     }
-    if (!isNaN(length)) {
-      fs.writeSync(fileDescriptor, "file '" + config.shortSilencesDirectory + identifier + "__" + length + ".mov\n");
-      total += 1;
-    }
+    fs.writeSync(fileDescriptor, "file '" + config.shortSilencesDirectory + clipToUse + "'\n");
+    total += 1;
   }
   return [longsUsed, total];
 }

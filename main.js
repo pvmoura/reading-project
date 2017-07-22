@@ -3,6 +3,7 @@ var config = JSON.parse(fs.readFileSync('config.json', 'utf8'));
 var mostCommonWords = JSON.parse(fs.readFileSync('most_common_words.json', 'utf-8'));
 mostCommonWords = mostCommonWords.map( function (word) { return word.toLowerCase(); } );
 var child = require('child_process');
+var moment = require('moment');
 var rawDataFiles;
 var allTheLengths = {};
 var allData = {};
@@ -12,7 +13,14 @@ var time = 0;
 var todaysClips = [];
 var edgeList = [], allTheClips = [], allTheWords, usedSegments = {}, favoredClips = [];
 var startingSegments = {};
-var shortSilences = [], allTheSilences = [];
+var shortSilences = [], allTheSilences = [], usedWords = [];
+var excludeWords = JSON.parse(fs.readFileSync('EXCLUDE_WORDS.json', 'utf-8'));
+excludeWords.forEach(function (word) {
+  usedWords.push(word);
+  usedWords.push(word);
+  usedWords.push(word);
+  usedWords.push(word);
+});
 var favoredIdentifier = process.argv[2];
 if (typeof favoredIdentifier === 'undefined')
   favoredIdentifier = null;
@@ -174,10 +182,16 @@ var processClip = function (filename, range, num) {
 };
 
 var makeVideo = function () {
-  var outputFilename = config.outputDirectory + 'final_output.mov';
+  var outputFilename = config.outputDirectory + 'final_output.mov', now, result;
+  if (fs.existsSync(outputFilename)) {
+    now = moment();
+    outputFilename = config.outputDirectory + 'final_output_' + now.format('YYYYMMDD_HHmm') + ".mov";
+    console.log("\x1b[31m\x1b[40m", "FINAL_OUTPUT.MOV EXISTS ALREADY, CALLING NEW FILE:", outputFilename, "\x1b[0m");
+  }
   var command = '-f concat -safe 0 -i concat_list.txt -c copy ' + outputFilename;
-  child.spawnSync('ffmpeg', command.split(' '));
-  return outputFilename;
+  result = child.spawnSync('ffmpeg', command.split(' '));
+
+  return [ outputFilename, result ];
 };
 
 var filterUndesirableWords = function (words, usedWords, halve) {
@@ -499,9 +513,12 @@ var filterSilencesByFavored = function (allTheSilences, favoredClips) {
 };
 
 var filterSilencesByTime = function (allTheSilences, startMinTime, startMaxTime) {
-  return allTheSilences.map(function (silenceItem) {
+  var temp = allTheSilences.map(function (silenceItem) {
     var clipIdentifier = silenceItem[0], silences = silenceItem[1];
     return [ clipIdentifier, filterSilenceArrayByStartAndEnd(silences, 0, startMinTime, startMaxTime) ];
+  });
+  return temp.filter(function (silenceItem) {
+    return silenceItem[1].length > 0;
   });
 };
 
@@ -562,7 +579,7 @@ var pickRandomConnectionSegment = function (connection, word) {
 var translatePickedConnectionSegmentToSilenceRange = function (connectionSegment, word, goToEnd) {
   //console.log(connectionSegment);
   return connectionSegment.map(function (c) {
-    console.log(connectionSegment[0], connectionSegment[1]);
+    
     var start = connectionSegment[0], end = connectionSegment[1],
         startSilences = getClosestSilenceRange(start[0], start[1]),
         endSilences = getClosestSilenceRange(end[0], end[1], goToEnd);
@@ -570,7 +587,6 @@ var translatePickedConnectionSegmentToSilenceRange = function (connectionSegment
         // startSilences = getSilenceRange(startInWordTimeStamp, startOutWordTimeStamp, start[0], goToEnd),
         // endInWordTimeStamp = end[1][0], endOutWordTimeStamp = end[end.length - 1][0],
         // endSilences = getSilenceRange(endInWordTimeStamp, endOutWordTimeStamp, end[0], goToEnd);
-    console.log(endSilences, startSilences);
     if (startSilences === null || endSilences === null)
       return null;
     return [ [word, start[0], startSilences ], [ word, end[0], endSilences ] ]
@@ -605,7 +621,11 @@ var addUsedClip = function(clip, usedClips) {
 };
 
 var orderStartSilencesByConnections = function (startSilences, edgeList, usedWords) {
-  var startingWords = startSilences.map(function (silenceItem) {
+  var startingWords = startSilences.filter(function (silenceItem) {
+    var silences = silenceItem[1];
+    return silences.length > 0;
+  });
+  startingWords = startingWords.map(function (silenceItem) {
     var clipIdentifier = silenceItem[0], silences = silenceItem[1];
     var range = reduceToStartAndEndPoints(silences), words;
     words = getWordsFromRange(clipIdentifier, range);
@@ -646,7 +666,7 @@ var filterConnectionsListByManySilences = function (connectionList) {
     var start = connection[0], end = connection[1];
     // //console.log(allData[start].silences, allData[end].silences);
     // process.kill(process.pid);
-    if (allData[start].silences.length >= 2 && allData[end].silences.length >= 2)
+    if (allData[start].silences.length >= 5 && allData[end].silences.length >= 5)
       return true;
   });
 };
@@ -690,18 +710,19 @@ var getSilenceRange = function (inWordTimeStamp, outWordTimeStamp, clip, goToEnd
 // maybe should save the filtered lists in a dictionary?
 // Or just do the work all over again?
 
-var getPath = function (allTheClips, edgeList, startSilences, startWords) {
-  var path = [], usedSegments = [], ordered = [], segment, possibleList = [], start = true, clip, wordsInSegment, wordsTimestamps, usedWords = [], counter = 0;
+var getPath = function (allTheClips, edgeList, startSilences, startWords, usedWords) {
+  var path = [], usedSegments = [], ordered = [], segment, possibleList = [], start = true, clip, wordsInSegment, wordsTimestamps, counter = 0;
   var featured;
   var clipLengths = [], usedSilences = [], keepGoing = true, favor = true;
   var alreadyFeatured = 0;
   
-  while (time < config.videoDuration && keepGoing) {
+  while (keepGoing) {
     if (start) {
       clip = startSilences[0];
       segment = startWords[1];
-      console.log(startSilences[1], startSilences);
       startSilence = reduceToStartAndEndPoints(startSilences[1]);
+      // change startSilence beginning to 0, no matter what it is
+      startSilence[0] = 0;
       addUsedSegments(clip, startSilence, usedSegments);
       nextPath = ['START', clip, startSilence];
       addUsedClip(clip, usedClips);
@@ -781,9 +802,10 @@ var getPath = function (allTheClips, edgeList, startSilences, startWords) {
     }
     connection = pickRandomConnectionSegment(connection, word);
 
-    // console.log(connection);
-    if (config.videoDuration - time <= 20) {
+    console.log("TIME SO FAR:", time, "TIME FROM END:", config.videoDuration - time);
+    if (config.videoDuration < time || config.videoDuration - time <= 40) {
       nextPath = translatePickedConnectionSegmentToSilenceRange(connection, word, true);
+      console.log("\x1b[33m\x1b", "GOING TO END", "\x1b[0m");
       keepGoing = false;  
     } else {
       nextPath = translatePickedConnectionSegmentToSilenceRange(connection, word);
@@ -846,19 +868,25 @@ rawDataFiles.forEach(function (filename) {
   }
 
 });
-var cleanup = function (finalOutput) {
-  if (fs.existsSync(finalOutput)) {
+var cleanup = function (filename, ffmpegResult) {
+
+  if (ffmpegResult.status === 0 || true) {
+
     var tempVids = fs.readdirSync(config.tempDirectory);
-    tempVids.forEach(function(v) {
-      fs.unlinkSync(config.tempDirectory + v);
+    var now = moment();
+    var newTempVidDir = "/Volumes/SCRATCH/TEMP_VIDEOS_" + now.format('YYYYMMDD_HHmm') + "/";
+    console.log(newTempVidDir);
+    fs.mkdirSync(newTempVidDir);
+    tempVids.forEach(function(video) {
+      fs.renameSync(config.tempDirectory + video, newTempVidDir + video);
     });
-    try {
-      fs.unlinkSync('./concat_list.txt');
-    } catch (err) {
-      console.log("concat file doesn't exist");
-    }
+    console.log("\x1b[33m\x1b", "MOVED TEMP VIDEOS TO", newTempVidDir, "\x1b[0m");
+
   } else {
-    console.log("\x1b[31m\x1b[40m", "Not deleting temp rawDataFiles because the final video wasn't made. Please manually concatenate the videos.", "\x1b[0m");
+    console.log("\x1b[31m\x1b[40m", "ERROR ON FFMPEG: REFUSING TO CLEAN UP.");
+    console.log("RAN THIS COMMAND:", ffmpegResult.args.join(' '));
+    console.log("TRIED TO CREATE:", filename);
+    console.log("FFMPEG ERROR MESSAGE:", ffmpegResult.stderr.toString(), "\x1b[0m");
   }
 };
 try {
@@ -875,29 +903,33 @@ favoredClips = getFavoredClips(rawDataFiles, favoredIdentifier);
 // favoredWords = getFavoredWords(edgeList);
 // console.log(favoredWords, favoredClips);
 // console.log(favoredClips);
-usedWords = [];
+console.log("\x1b[33m\x1b[40mEXCLUDING THESE WORDS", usedWords, "\x1b[0m");
 startSilences = filterSilencesByTime(allTheSilences, config.startMinTime, config.startMaxTime);
 favoredStartSilences = filterSilencesByFavored(startSilences, favoredClips);
 orderedStartSilences = orderStartSilencesByConnections(startSilences, edgeList, usedWords);
+orderedFavored = orderStartSilencesByConnections(favoredStartSilences, edgeList, usedWords);
 filteredFavoredStartSilences = filterStartSilencesByConnections(favoredStartSilences, edgeList, usedWords);
 
 
-startWords = filteredFavoredStartSilences.length > 0 ? filteredFavoredStartSilences[0] : orderedStartSilences[0];
+startWords = filteredFavoredStartSilences.length > 0 ? drawRandomlyFromArray(filteredFavoredStartSilences) : orderedStartSilences[0];
 startSilence = startSilences.filter(function (silenceItem) {
   var clipIdentifier = silenceItem[0];
-  return clipIdentifier == startWords[0];
+  return clipIdentifier === startWords[0];
 });
 
-
-path = getPath(allTheClips, edgeList, startSilence[0], startWords);
-
-// path = getPath("hello", allTheClips, edgeList);
+path = getPath(allTheClips, edgeList, startSilence[0], startWords, usedWords);
 
 console.log(path, time);
+var outputNow = moment();
+var outputInfoFd = fs.openSync(config.outputInfoDirectory + "OUTPUT_FOR_" + outputNow.format('YYYYMMDD_HHmm') + ".txt", 'a');
 path.forEach(function (item, i) {
   console.log(item);
+  var totalTime = item[2][1] - item[2][0];
+  fs.writeSync(outputInfoFd, JSON.stringify(item) + " SEGMENT TIME:" + totalTime + "\n");
   processClip(item[1], item[2], i);
 });
 var finalOutput = makeVideo();
-
-// cleanup(finalOutput, outroOutput);
+fs.writeSync(outputInfoFd, "FINAL OUTPUT FILENAME:" + finalOutput[0] + "\n");
+fs.writeSync(outputInfoFd, "CONFIG SETTINGS:" + JSON.stringify(config));
+fs.closeSync(outputInfoFd);
+cleanup(finalOutput[0], finalOutput[1]);

@@ -55,8 +55,10 @@ if (fs.existsSync(fullFilenameRawData)) {
 		else if (a[0] > b[0]) return -1;
 		else return 0;
 	});
-	if (silencesWithTotalTime.length > 2) {
-		silencesWithTotalTime = [silencesWithTotalTime[0], silencesWithTotalTime.pop()];
+	if (silencesWithTotalTime.length > 3) {
+		silencesWithTotalTime = [ silencesWithTotalTime[0],
+								 silencesWithTotalTime.pop(),
+								 silencesWithTotalTime.pop() ];
 	}
 	silencesWithTotalTime.forEach(function (s) {
 		var totalTime = s[0], range = s[1];

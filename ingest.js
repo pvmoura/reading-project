@@ -25,7 +25,7 @@ watcher.on('change', function (eventType, filename) {
 		if (extension === 'wav' && fs.existsSync(config.waveFileDirectory + filename)) {
 			console.log("PROCESSING FILE", filename);
 			if (typeof identifier !== 'undefined' && typeof processedFiles[identifier] === 'undefined') {
-
+				processedFiles[identifier] = true;
 				silenceProcesser = child.spawn('node', ['./processSilencesAndShortSilences.js', filename, portraits]);
 				silenceProcesser.on('close', function (code, signal) {
 					// console.log("FINISHED PROCESSING SILENCES IN RAW DATA", filename, code);
